@@ -1,34 +1,57 @@
+import os
+import json
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
+# อ่านค่า token/secret จาก Environment Variables
+CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+
+if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
+    raise ValueError("Environment variables LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_SECRET are missing!")
+
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(CHANNEL_SECRET)
+
 app = Flask(__name__)
 
-# ใส่ Token/Secret ของคุณตรงนี้
-LINE_CHANNEL_ACCESS_TOKEN = "cMVOGkL006pgWyPC05nJOSD0oGOYo+6d2if8muZW8lc6/Jp+QzUYPNvf6334bvH+43119o+m26XvBFaAD+mCJzVq6BF5OhOu4ZTRjnA89lPk+cBJ3g6SnbB++pw941jj9KZ2U/uyCZhtRNSC/aqtlwdB04t89/1O/w1cDnyilFU="
-LINE_CHANNEL_SECRET = "b22543fb3525a0bcd84886ab25822602"
+# Health check
+@app.route("/", methods=["GET"])
+def home():
+    return "ok", 200
 
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+# จุดรับ webhook
+@app.route("/webhook", methods=["POST", "GET"])
+def webhook():
+    if request.method == "GET":
+        return "Webhook OK", 200
 
-@app.route("/callback", methods=['POST'])
-def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+    return "OK", 200
 
-    return 'OK'
-
+# จัดการข้อความ
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=event.message.text))  # ตอบกลับเหมือนที่ส่งมา
+    text = (event.message.text or "").strip()
+
+    if text == "โปรไฟล์":
+        profile = line_bot_api.get_profile(event.source.user_id)
+        reply = f"ชื่อ: {profile.display_name}\nuserId: {profile.user_id}"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+    else:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="พิมพ์ 'โปรไฟล์' เพื่อลองทดสอบครับ")
+        )
 
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
