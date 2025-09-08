@@ -18,25 +18,33 @@ handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
 # ===== Google Apps Script Config =====
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxI0jxXnWU0JkTvJG8aa_zL6-FgsXGThL8nh1xo_Qok6MGHcNel5gLoLojrBvx8MSlCg/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPHd662S-mygVh3mDRkR3YCF2RBnjlboCnJymaXh254CpX5WR29DBijVKdCiXZVTgVAw/exec"
 SECRET_CODE = "my_secret_code"
 ADMIN_PASS = "8264"
 
 # ===== เก็บ state ของผู้ใช้ =====
 user_states = {}  
-# โครงสร้าง: { userId: {"step": int, "data": {...}, "role": str, "editing": bool} }
+# { userId: {"step": int, "data": {...}, "role": str, "editing": bool} }
+
+def get_profile_from_sheets(user_id):
+    try:
+        payload = {"secret": SECRET_CODE, "action": "getProfile", "userId": user_id}
+        r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 def save_profile_to_sheets(profile_data):
     try:
         payload = {
             "secret": SECRET_CODE,
+            "action": "addProfile",
             "userId": profile_data.get("userId"),
             "ชื่อ": profile_data.get("ชื่อ"),
             "ห้อง": profile_data.get("ห้อง"),
             "เลขที่": profile_data.get("เลขที่"),
             "เวรวัน": profile_data.get("เวรวัน"),
         }
-        # ✅ ส่ง role เฉพาะตอนสมัครครั้งแรก
         if "บทบาท" in profile_data:
             payload["บทบาท"] = profile_data["บทบาท"]
 
@@ -70,25 +78,26 @@ def handle_message(event):
     user_id = event.source.user_id
     text = (event.message.text or "").strip()
 
-    # เริ่มต้น: ผู้ใช้พิมพ์ "โปรไฟล์"
     if text == "โปรไฟล์":
-        if user_id not in user_states:
-            user_states[user_id] = {
-                "step": 0,
-                "data": {"userId": user_id},
-                "role": None,
-                "editing": False
-            }
+        result = get_profile_from_sheets(user_id)
+        if result.get("ok") and "profile" in result:
+            profile = result["profile"]
+            msg = f"""คุณมีข้อมูลอยู่แล้ว:
+ชื่อ: {profile.get("ชื่อ")}
+ห้อง: {profile.get("ห้อง")}
+เลขที่: {profile.get("เลขที่")}
+เวรวัน: {profile.get("เวรวัน")}
+บทบาท: {profile.get("บทบาท")}
+
+คุณต้องการแก้ไขโปรไฟล์ไหม? (ใช่/ไม่ใช่)"""
+            user_states[user_id] = {"step": 99, "role": profile.get("บทบาท"), "data": {"userId": user_id}}
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
+        else:
+            user_states[user_id] = {"step": 0, "data": {"userId": user_id}, "role": None, "editing": False}
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text="กรุณากรอกบทบาทของคุณ (นักเรียน / อาจารย์ / แอดมิน):")
             )
-        else:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="คุณต้องการแก้ไขโปรไฟล์ไหม? (ใช่/ไม่ใช่)")
-            )
-            user_states[user_id]["step"] = 99
         return
 
     # ถ้ามี state
@@ -106,10 +115,10 @@ def handle_message(event):
             state["data"]["บทบาท"] = role
             if role == "นักเรียน":
                 state["step"] = 1
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ เช่น (ธนชัย นันทะโย)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ:"))
             elif role == "อาจารย์":
                 state["step"] = 10
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ เช่น (ครูสมชาย)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ:"))
             elif role == "แอดมิน":
                 state["step"] = 20
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกรหัสผ่าน:"))
@@ -120,15 +129,15 @@ def handle_message(event):
             if step == 1:
                 state["data"]["ชื่อ"] = text
                 state["step"] = 2
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง เช่น (5/4)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง:"))
             elif step == 2:
                 state["data"]["ห้อง"] = text
                 state["step"] = 3
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเลขที่ เช่น (12)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเลขที่:"))
             elif step == 3:
                 state["data"]["เลขที่"] = text
                 state["step"] = 4
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน เช่น (จันทร์)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน:"))
             elif step == 4:
                 state["data"]["เวรวัน"] = text
                 result = save_profile_to_sheets(state["data"])
@@ -143,7 +152,7 @@ def handle_message(event):
             if step == 10:
                 state["data"]["ชื่อ"] = text
                 state["step"] = 11
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง เช่น (5/4)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง:"))
             elif step == 11:
                 state["data"]["ห้อง"] = text
                 state["data"]["เลขที่"] = "-"
@@ -162,19 +171,19 @@ def handle_message(event):
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ รหัสไม่ถูกต้อง"))
                     return
                 state["step"] = 21
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ เช่น (สมชาย แอดมิน)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ:"))
             elif step == 21:
                 state["data"]["ชื่อ"] = text
                 state["step"] = 22
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง เช่น (5/4)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง:"))
             elif step == 22:
                 state["data"]["ห้อง"] = text
                 state["step"] = 23
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเลขที่ เช่น (12)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเลขที่:"))
             elif step == 23:
                 state["data"]["เลขที่"] = text
                 state["step"] = 24
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน เช่น (จันทร์)"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน:"))
             elif step == 24:
                 state["data"]["เวรวัน"] = text
                 result = save_profile_to_sheets(state["data"])
@@ -203,7 +212,7 @@ def handle_message(event):
                 del user_states[user_id]
             return
 
-    # ถ้าไม่มี state เลย
+    # ถ้าไม่มี state
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="พิมพ์ 'โปรไฟล์' เพื่อเริ่มตั้งค่า")
