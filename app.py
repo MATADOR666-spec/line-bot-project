@@ -195,8 +195,8 @@ def handle_message(event):
 
         # ---------- แก้ไขโปรไฟล์ ----------
         if step == 99:
-            answer = text.strip().lower()
-            if answer in ["ใช่", "yes", "y"]:
+            answer = text.strip()
+            if answer in ["ใช่", "Yes", "yes", "y", "Y"]:
                 role = state["role"]
                 state["editing"] = True
                 if role == "นักเรียน":
@@ -208,12 +208,11 @@ def handle_message(event):
                 elif role == "แอดมิน":
                     state["step"] = 21
                     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
-            elif answer in ["ไม่", "ไม่ใช่", "no", "n"]:
+            elif answer in ["ไม่", "ไม่ใช่", "No", "no", "n", "N"]:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="ไม่แก้ไขโปรไฟล์"))
                 del user_states[user_id]
             else:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="ไม่แก้ไขโปรไฟล์"))
-                del user_states[user_id]
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❓ กรุณาตอบว่า 'ใช่' หรือ 'ไม่'"))
             return
 
     # ถ้าไม่มี state
