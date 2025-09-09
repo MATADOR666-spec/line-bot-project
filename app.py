@@ -115,13 +115,13 @@ def handle_message(event):
                 state["editing"] = True
                 if role == "นักเรียน":
                     state["step"] = 1
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ (เช่น .ธนชัย นันทะโย.):"))
                 elif role == "อาจารย์":
                     state["step"] = 10
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ (เช่น .อาจารย์มัน.):"))
                 elif role == "แอดมิน":
                     state["step"] = 21
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ (เช่น .ธนชัย นันทะโย.):"))
             elif answer in ["ไม่", "ไม่ใช่", "No", "no", "n", "N"]:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="ไม่แก้ไขโปรไฟล์"))
                 del user_states[user_id]
@@ -142,7 +142,7 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ (เช่น .ธนชัย นันทะโย.):"))
             elif role == "อาจารย์":
                 state["step"] = 10
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ (เช่น .ครูมัน.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ (เช่น .อาจารย์มัน.):"))
             elif role == "แอดมิน":
                 state["step"] = 20
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกรหัสผ่าน:"))
@@ -176,7 +176,7 @@ def handle_message(event):
             if step == 10:
                 state["data"]["ชื่อ"] = text
                 state["step"] = 11
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง(เช่น ถ้าอยู่ห้อง5/4 ให้เขียน .54.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง (เช่น ถ้าอยู่ห้อง5/4 ให้เขียน .54.):"))
             elif step == 11:
                 state["data"]["ห้อง"] = text
                 state["data"]["เลขที่"] = "-"
