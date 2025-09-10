@@ -102,8 +102,8 @@ def send_duty_reminder():
 
 # รัน schedule 2 เวลา
 def run_schedule():
-    schedule.every().day.at("15:20").do(send_duty_reminder)
-    schedule.every().day.at("20:30").do(send_duty_reminder)
+    schedule.every().day.at("8:20").do(send_duty_reminder)
+    schedule.every().day.at("14:10").do(send_duty_reminder)
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -271,13 +271,6 @@ def handle_message(event):
                 ))
                 del user_states[user_id]
             return
-
-    # ถ้าไม่มี state และไม่พิมพ์ "โปรไฟล์"
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="")
-    )
-
 
 # ===== Run =====
 if __name__ == "__main__":
