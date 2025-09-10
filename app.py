@@ -327,13 +327,13 @@ def handle_image(event):
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
     # ส่ง binary ไป Apps Script
-    headers = {
+    params = {
         "secret": SECRET_CODE,
         "action": "uploadEvidence",
         "userId": user_id
     }
-    res = requests.post(APPS_SCRIPT_URL, headers=headers, data=img_data)
-    result = res.json()
+    res = requests.post(APPS_SCRIPT_URL, params=params, data=img_data,
+                        headers={"Content-Type": "application/octet-stream"})
 
     if not result.get("ok"):
         line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดรูปไม่สำเร็จ"))
