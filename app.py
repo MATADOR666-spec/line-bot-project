@@ -317,33 +317,44 @@ def handle_message(event):
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     user_id = event.source.user_id
-    if user_id not in user_states or user_states[user_id].get("step")!="evidence": return
+    if user_id not in user_states or user_states[user_id].get("step") != "evidence":
+        return
+
     state = user_states[user_id]
-    content_url = f"https://api-data.line.me/v2/bot/message/{event.message.id}/content"
-    state["evidence"].append(content_url)
-    if len(state["evidence"])==3:
+
+    # เก็บ messageId แทน URL
+    state["evidence"].append(event.message.id)
+
+    if len(state["evidence"]) == 3:
         today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         log = {
             "userId": user_id,
             "ห้อง": state["data"]["ห้อง"],
             "เวรวัน": state["data"]["เวรวัน"],
             "วันที่": today,
+            "เลขที่ผู้ส่ง": state["data"]["เลขที่"],
             "URL รูปที่1": state["evidence"][0],
             "URL รูปที่2": state["evidence"][1],
-            "URL รูปที่3": state["evidence"][2]
+            "URL รูปที่3": state["evidence"][2],
+            "เวลา": datetime.now(BANGKOK_TZ).strftime("%H:%M"),
+            "สถานะ": "Submitted"
         }
+
         res = save_duty_log(log)
         if res.get("ok"):
             profiles = get_all_profiles()
             for t in profiles["profiles"]:
-                if t.get("บทบาท")=="อาจารย์" and str(t.get("ห้อง"))==str(state["data"]["ห้อง"]):
-                    line_bot_api.push_message(t["userId"], TextSendMessage(
-                        text=f"✅ ห้อง {state['data']['ห้อง']} เวรวัน{state['data']['เวรวัน']} ส่งหลักฐานครบแล้ว"
-                    ))
+                if t.get("บทบาท") == "อาจารย์" and str(t.get("ห้อง")) == str(state["data"]["ห้อง"]):
+                    line_bot_api.push_message(
+                        t["userId"],
+                        TextSendMessage(text=f"✅ ห้อง {state['data']['ห้อง']} เวรวัน{state['data']['เวรวัน']} ส่งหลักฐานครบแล้ว")
+                    )
             line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
         else:
             line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
+
         del user_states[user_id]
+
 
 # ===== Run =====
 if __name__ == "__main__":
