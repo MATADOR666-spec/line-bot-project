@@ -74,31 +74,46 @@ def is_holiday(today_date):
         return False
 
 # ===== ระบบแจ้งเตือนเวร =====
-def send_duty_reminder():
+def send_duty_reminder(max_retries=3, delay=10):
     today = datetime.now()
-    today_name = today.strftime("%A")  # Monday, Tuesday, ...
-    today_thai = {"Monday":"จันทร์","Tuesday":"อังคาร","Wednesday":"พุธ",
-                  "Thursday":"พฤหัสบดี","Friday":"ศุกร์","Saturday":"เสาร์","Sunday":"อาทิตย์"}[today_name]
+    today_name = today.strftime("%A")
+    today_thai = {
+        "Monday": "จันทร์", "Tuesday": "อังคาร", "Wednesday": "พุธ",
+        "Thursday": "พฤหัสบดี", "Friday": "ศุกร์",
+        "Saturday": "เสาร์", "Sunday": "อาทิตย์"
+    }[today_name]
 
     today_date = today.strftime("%Y-%m-%d")
+    print(f">>> เริ่มส่งแจ้งเตือน {today_date} ({today_thai})")
 
     # ข้ามวันหยุด + เสาร์อาทิตย์
-    if today_name in ["Saturday","Sunday"] or is_holiday(today_date):
+    if today_name in ["Saturday", "Sunday"] or is_holiday(today_date):
         print("วันนี้เป็นวันหยุด ไม่ส่งแจ้งเตือน")
         return
 
     data = get_all_profiles()
-    if not data.get("ok"): return
+    if not data.get("ok"):
+        print("ERROR: ไม่สามารถดึงรายชื่อจากชีท")
+        return
 
     for p in data["profiles"]:
-        if str(p.get("เวรวัน","")).strip() == today_thai:
-            try:
-                line_bot_api.push_message(
-                    p["userId"],
-                    TextSendMessage(text=f"📢 แจ้งเตือนเวรประจำวัน{today_thai}\nชื่อ: {p.get('ชื่อ')}\nห้อง: {p.get('ห้อง')}")
-                )
-            except Exception as e:
-                print("ERROR push_message:", e)
+        if str(p.get("เวรวัน", "")).strip() == today_thai:
+            user_id = p["userId"]
+            msg = f"📢 แจ้งเตือนเวรประจำวัน{today_thai}\nชื่อ: {p.get('ชื่อ')}\nห้อง: {p.get('ห้อง')}"
+            
+            success = False
+            for attempt in range(1, max_retries + 1):
+                try:
+                    line_bot_api.push_message(user_id, TextSendMessage(text=msg))
+                    print(f"ส่งสำเร็จ → userId={user_id} (รอบ {attempt})")
+                    success = True
+                    break
+                except Exception as e:
+                    print(f"❌ ERROR ส่งไม่สำเร็จ (รอบ {attempt}):", e)
+                    time.sleep(delay)  # เว้นระยะให้ Render ตื่น
+
+            if not success:
+                print(f"❌ ส่งไม่สำเร็จทั้งหมด {max_retries} รอบ → userId={user_id}")
 
 @app.route("/run-reminder", methods=["GET"])
 def run_reminder():
