@@ -300,7 +300,7 @@ def handle_message(event):
     # เริ่มส่งหลักฐาน
     if text == "หลักฐานการทำเวร":
         now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
-        if not ("14:40" <= now <= "17:00"):
+        if not ("00:40" <= now <= "17:00"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ส่งได้เฉพาะเวลา 14:40 - 17:00"))
             return
         result = get_profile_from_sheets(user_id)
