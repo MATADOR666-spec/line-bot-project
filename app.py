@@ -322,9 +322,24 @@ def handle_image(event):
 
     state = user_states[user_id]
 
-    # เก็บ messageId แทน URL
-    state["evidence"].append(event.message.id)
+    # โหลดรูปจาก LINE
+    content = line_bot_api.get_message_content(event.message.id)
+    img_data = b"".join([chunk for chunk in content.iter_content()])
 
+    # ส่ง binary ไป Apps Script
+    files = {"file": img_data}
+    payload = {"secret": SECRET_CODE, "action": "uploadEvidence", "userId": user_id}
+    res = requests.post(APPS_SCRIPT_URL, data=payload, files=files)
+    result = res.json()
+
+    if not result.get("ok"):
+        line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดรูปไม่สำเร็จ"))
+        return
+
+    # เก็บ URL ที่ได้
+    state["evidence"].append(result["url"])
+
+    # ถ้าครบ 3 รูปแล้ว บันทึกลง Duty Log
     if len(state["evidence"]) == 3:
         today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         log = {
@@ -354,6 +369,7 @@ def handle_image(event):
             line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
 
         del user_states[user_id]
+
 
 
 # ===== Run =====
