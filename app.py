@@ -328,18 +328,15 @@ def handle_image(event):
 
     # ส่ง binary ไป Apps Script
     try:
-        params = {
+        files = {
+            "file": ("evidence.jpg", img_data, "image/jpeg")
+        }
+        data = {
             "secret": SECRET_CODE,
             "action": "uploadEvidence",
             "userId": user_id
         }
-        res = requests.post(
-            APPS_SCRIPT_URL,
-            params=params,
-            data=img_data,
-            headers={"Content-Type": "application/octet-stream"},
-            timeout=20
-        )
+        res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=20)
         print("📡 Upload status:", res.status_code, res.text)  # debug
         result = res.json()
     except Exception as e:
