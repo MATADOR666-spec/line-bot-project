@@ -1,13 +1,11 @@
 import os
 import requests
-import schedule
 import time
-import threading
 from datetime import datetime
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 
 # ===== LINE Bot Config =====
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -22,13 +20,13 @@ handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
 # ===== Google Apps Script Config =====
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzBfKSVms6KCYeaFdQvLKhvYFCn7SYNBvdGDSQ8dC-89kgB7pcMZSwCXO_m2h1Jg0PD0g/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwO2eVHVWzLU9uOaVW2fXY3Eh02IJyFWCLjPYpBdDc3O8_uE5U5n_FuFpbqsOELKmR20w/exec"   # <== ใส่ของคุณเอง
 SECRET_CODE = "my_secret_code"
 ADMIN_PASS = "8264"
 
-# ===== เก็บ state ของผู้ใช้ =====
+# ===== เก็บ state =====
 user_states = {}  
-# { userId: {"step": int, "data": {...}, "role": str, "editing": bool} }
+# { userId: {"step": int, "role": str, "data": {}, "editing": bool, "evidence": []} }
 
 # ===== Helper =====
 def get_profile_from_sheets(user_id):
@@ -41,16 +39,7 @@ def get_profile_from_sheets(user_id):
 
 def save_profile_to_sheets(profile_data):
     try:
-        payload = {
-            "secret": SECRET_CODE,
-            "action": "addProfile",
-            "userId": profile_data.get("userId"),
-            "ชื่อ": profile_data.get("ชื่อ"),
-            "ห้อง": profile_data.get("ห้อง"),
-            "เลขที่": profile_data.get("เลขที่"),
-            "เวรวัน": profile_data.get("เวรวัน"),
-            "บทบาท": profile_data.get("บทบาท"),
-        }
+        payload = {"secret": SECRET_CODE, "action": "addProfile", **profile_data}
         r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
         return r.json()
     except Exception as e:
@@ -70,11 +59,26 @@ def is_holiday(today_date):
         r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
         return r.json().get("isHoliday", False)
     except Exception as e:
-        print("ERROR is_holiday:", e)
         return False
 
+def save_duty_log(log_data):
+    try:
+        payload = {"secret": SECRET_CODE, "action": "addDutyLog", **log_data}
+        r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def check_duty_log(room, date):
+    try:
+        payload = {"secret": SECRET_CODE, "action": "checkDutyLog", "ห้อง": room, "date": date}
+        r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 # ===== ระบบแจ้งเตือนเวร =====
-def send_duty_reminder(max_retries=3, delay=10):
+def send_duty_reminder():
     today = datetime.now()
     today_name = today.strftime("%A")
     today_thai = {
@@ -84,45 +88,53 @@ def send_duty_reminder(max_retries=3, delay=10):
     }[today_name]
 
     today_date = today.strftime("%Y-%m-%d")
-    print(f">>> เริ่มส่งแจ้งเตือน {today_date} ({today_thai})")
 
-    # ข้ามวันหยุด + เสาร์อาทิตย์
     if today_name in ["Saturday", "Sunday"] or is_holiday(today_date):
-        print("วันนี้เป็นวันหยุด ไม่ส่งแจ้งเตือน")
         return
 
     data = get_all_profiles()
     if not data.get("ok"):
-        print("ERROR: ไม่สามารถดึงรายชื่อจากชีท")
         return
 
     for p in data["profiles"]:
         if str(p.get("เวรวัน", "")).strip() == today_thai:
             user_id = p["userId"]
             msg = f"📢 แจ้งเตือนเวรประจำวัน{today_thai}\nชื่อ: {p.get('ชื่อ')}\nห้อง: {p.get('ห้อง')}"
-            
-            success = False
-            for attempt in range(1, max_retries + 1):
-                try:
-                    line_bot_api.push_message(user_id, TextSendMessage(text=msg))
-                    print(f"ส่งสำเร็จ → userId={user_id} (รอบ {attempt})")
-                    success = True
-                    break
-                except Exception as e:
-                    print(f"❌ ERROR ส่งไม่สำเร็จ (รอบ {attempt}):", e)
-                    time.sleep(delay)  # เว้นระยะให้ Render ตื่น
-
-            if not success:
-                print(f"❌ ส่งไม่สำเร็จทั้งหมด {max_retries} รอบ → userId={user_id}")
+            try:
+                line_bot_api.push_message(user_id, TextSendMessage(text=msg))
+            except Exception as e:
+                print("ERROR push:", e)
 
 @app.route("/run-reminder", methods=["GET"])
 def run_reminder():
-    try:
-        send_duty_reminder()
-        return "Reminder sent", 200
-    except Exception as e:
-        return f"Error: {e}", 500
-    
+    send_duty_reminder()
+    return "Reminder sent", 200
+
+# ===== ตรวจ 17:00 ว่ายังไม่ส่งหลักฐาน =====
+def check_missing_evidence():
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_name = datetime.now().strftime("%A")
+    today_thai = {"Monday":"จันทร์","Tuesday":"อังคาร","Wednesday":"พุธ","Thursday":"พฤหัสบดี","Friday":"ศุกร์"}.get(today_name)
+    if not today_thai: return
+
+    data = get_all_profiles()
+    if not data.get("ok"): return
+
+    for p in data["profiles"]:
+        if str(p.get("เวรวัน")) == today_thai:
+            r = check_duty_log(p["ห้อง"], today)
+            if not r.get("found"):
+                for t in data["profiles"]:
+                    if t.get("บทบาท") == "อาจารย์" and str(t.get("ห้อง")) == str(p["ห้อง"]):
+                        line_bot_api.push_message(t["userId"], TextSendMessage(
+                            text=f"⚠️ ห้อง {p['ห้อง']} เวรวัน{today_thai} ยังไม่ได้ส่งหลักฐาน"
+                        ))
+
+@app.route("/run-check-evidence", methods=["GET"])
+def run_check_evidence():
+    check_missing_evidence()
+    return "Check complete", 200
+
 # ===== Routes =====
 @app.route("/", methods=["GET"])
 def home():
@@ -139,18 +151,18 @@ def webhook():
         abort(400)
     return "OK", 200
 
-# ===== Handle Messages (ระบบโปรไฟล์) =====
+# ===== Handle Messages =====
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = (event.message.text or "").strip()
 
-# เริ่มจากพิมพ์ "โปรไฟล์"
+    # เรียกโปรไฟล์
     if text == "โปรไฟล์":
         result = get_profile_from_sheets(user_id)
         if result.get("ok") and "profile" in result:
             profile = result["profile"]
-            msg = f"""คุณมีข้อมูลอยู่แล้ว:
+            msg = f"""คุณมีข้อมูลอยู่แล้ว:            
 ชื่อ: {profile.get("ชื่อ")}
 ห้อง: {profile.get("ห้อง")}
 เลขที่: {profile.get("เลขที่")}
@@ -284,6 +296,58 @@ def handle_message(event):
                 ))
                 del user_states[user_id]
             return
+
+
+    # เริ่มส่งหลักฐาน
+    if text == "หลักฐานการทำเวร":
+        now = datetime.now().strftime("%H:%M")
+        if not ("14:40" <= now <= "17:00"):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ส่งได้เฉพาะเวลา 14:40 - 17:00"))
+            return
+        result = get_profile_from_sheets(user_id)
+        if not result.get("ok"): return
+        profile = result["profile"]
+        today = datetime.now().strftime("%Y-%m-%d")
+        r = check_duty_log(profile["ห้อง"], today)
+        if r.get("found"):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ห้องนี้ส่งหลักฐานแล้ว"))
+            return
+        user_states[user_id] = {"step":"evidence","data":profile,"evidence":[]}
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณาส่งรูป 3 รูปต่อไปนี้"))
+
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image(event):
+    user_id = event.source.user_id
+    if user_id not in user_states or user_states[user_id].get("step")!="evidence": return
+    state = user_states[user_id]
+    content_url = f"https://api-data.line.me/v2/bot/message/{event.message.id}/content"
+    headers = {"Authorization": f"Bearer {CHANNEL_ACCESS_TOKEN}"}
+    # เก็บ URL ไว้ (จริงๆ ต้องดาวน์โหลดแล้วอัปโหลดไป storage ของคุณ)
+    state["evidence"].append(content_url)
+    if len(state["evidence"])==3:
+        today = datetime.now().strftime("%Y-%m-%d")
+        log = {
+            "userId": user_id,
+            "ห้อง": state["data"]["ห้อง"],
+            "เวรวัน": state["data"]["เวรวัน"],
+            "วันที่": today,
+            "URL รูปที่1": state["evidence"][0],
+            "URL รูปที่2": state["evidence"][1],
+            "URL รูปที่3": state["evidence"][2]
+        }
+        res = save_duty_log(log)
+        if res.get("ok"):
+            # แจ้งอาจารย์
+            profiles = get_all_profiles()
+            for t in profiles["profiles"]:
+                if t.get("บทบาท")=="อาจารย์" and str(t.get("ห้อง"))==str(state["data"]["ห้อง"]):
+                    line_bot_api.push_message(t["userId"], TextSendMessage(
+                        text=f"✅ ห้อง {state['data']['ห้อง']} เวรวัน{state['data']['เวรวัน']} ส่งหลักฐานครบแล้ว"
+                    ))
+            line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
+        else:
+            line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
+        del user_states[user_id]
 
 # ===== Run =====
 if __name__ == "__main__":
