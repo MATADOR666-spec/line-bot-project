@@ -327,16 +327,28 @@ def handle_image(event):
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
     # ส่ง binary ไป Apps Script
-    params = {
-        "secret": SECRET_CODE,
-        "action": "uploadEvidence",
-        "userId": user_id
-    }
-    res = requests.post(APPS_SCRIPT_URL, params=params, data=img_data,
-                        headers={"Content-Type": "application/octet-stream"})
+    try:
+        params = {
+            "secret": SECRET_CODE,
+            "action": "uploadEvidence",
+            "userId": user_id
+        }
+        res = requests.post(
+            APPS_SCRIPT_URL,
+            params=params,
+            data=img_data,
+            headers={"Content-Type": "application/octet-stream"},
+            timeout=20
+        )
+        print("📡 Upload status:", res.status_code, res.text)  # debug
+        result = res.json()
+    except Exception as e:
+        print("❌ Upload error:", e)
+        line_bot_api.push_message(user_id, TextSendMessage(text="❌ เกิดข้อผิดพลาดตอนอัพโหลดรูป"))
+        return
 
     if not result.get("ok"):
-        line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดรูปไม่สำเร็จ"))
+        line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดรูปไม่สำเร็จ: " + str(result)))
         return
 
     # เก็บ URL ที่ได้
@@ -372,8 +384,6 @@ def handle_image(event):
             line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
 
         del user_states[user_id]
-
-
 
 # ===== Run =====
 if __name__ == "__main__":
