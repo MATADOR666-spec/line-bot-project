@@ -1,5 +1,9 @@
 import os
 import requests
+import schedule
+import time
+import threading
+from datetime import datetime
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -18,7 +22,7 @@ handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
 # ===== Google Apps Script Config =====
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxPHd662S-mygVh3mDRkR3YCF2RBnjlboCnJymaXh254CpX5WR29DBijVKdCiXZVTgVAw/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyL_vwQfjydop1nJTy_Eho835HbpCA9DeoX-1tzgOuA0PVhWYIWy3LfNbWxbFIZ9lVoQ/exec"
 SECRET_CODE = "my_secret_code"
 ADMIN_PASS = "8264"
 
@@ -52,32 +56,83 @@ def save_profile_to_sheets(profile_data):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def get_all_profiles():
+    try:
+        payload = {"secret": SECRET_CODE, "action": "getAllProfiles"}
+        r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def is_holiday(today_date):
+    try:
+        payload = {"secret": SECRET_CODE, "action": "isHoliday", "date": today_date}
+        r = requests.post(APPS_SCRIPT_URL, json=payload, timeout=10)
+        return r.json().get("isHoliday", False)
+    except Exception as e:
+        print("ERROR is_holiday:", e)
+        return False
+
+# ===== ระบบแจ้งเตือนเวร =====
+def send_duty_reminder():
+    today = datetime.now()
+    today_name = today.strftime("%A")  # Monday, Tuesday, ...
+    today_thai = {"Monday":"จันทร์","Tuesday":"อังคาร","Wednesday":"พุธ",
+                  "Thursday":"พฤหัสบดี","Friday":"ศุกร์","Saturday":"เสาร์","Sunday":"อาทิตย์"}[today_name]
+
+    today_date = today.strftime("%Y-%m-%d")
+
+    # ข้ามวันหยุด + เสาร์อาทิตย์
+    if today_name in ["Saturday","Sunday"] or is_holiday(today_date):
+        print("วันนี้เป็นวันหยุด ไม่ส่งแจ้งเตือน")
+        return
+
+    data = get_all_profiles()
+    if not data.get("ok"): return
+
+    for p in data["profiles"]:
+        if str(p.get("เวรวัน","")).strip() == today_thai:
+            try:
+                line_bot_api.push_message(
+                    p["userId"],
+                    TextSendMessage(text=f"📢 แจ้งเตือนเวรประจำวัน{today_thai}\nชื่อ: {p.get('ชื่อ')}\nห้อง: {p.get('ห้อง')}")
+                )
+            except Exception as e:
+                print("ERROR push_message:", e)
+
+# รัน schedule 2 เวลา
+def run_schedule():
+    schedule.every().day.at("15:20").do(send_duty_reminder)
+    schedule.every().day.at("15:30").do(send_duty_reminder)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+threading.Thread(target=run_schedule, daemon=True).start()
+
 # ===== Routes =====
 @app.route("/", methods=["GET"])
 def home():
     return "ok", 200
 
-@app.route("/webhook", methods=["POST", "GET"])
+@app.route("/webhook", methods=["POST","GET"])
 def webhook():
-    if request.method == "GET":
-        return "Webhook OK", 200
-
-    signature = request.headers.get("X-Line-Signature", "")
+    if request.method == "GET": return "Webhook OK", 200
+    signature = request.headers.get("X-Line-Signature","")
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
     return "OK", 200
 
-# ===== Handle Messages =====
+# ===== Handle Messages (ระบบโปรไฟล์) =====
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = (event.message.text or "").strip()
 
-    # เริ่มจากพิมพ์ "โปรไฟล์"
+# เริ่มจากพิมพ์ "โปรไฟล์"
     if text == "โปรไฟล์":
         result = get_profile_from_sheets(user_id)
         if result.get("ok") and "profile" in result:
@@ -223,7 +278,8 @@ def handle_message(event):
         TextSendMessage(text="")
     )
 
+
 # ===== Run =====
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT",8000))
     app.run(host="0.0.0.0", port=port)
