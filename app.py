@@ -103,7 +103,7 @@ def send_duty_reminder():
 # รัน schedule 2 เวลา
 def run_schedule():
     schedule.every().day.at("8:20").do(send_duty_reminder)
-    schedule.every().day.at("14:10").do(send_duty_reminder)
+    schedule.every().day.at("14:20").do(send_duty_reminder)
     while True:
         schedule.run_pending()
         time.sleep(1)
@@ -154,7 +154,7 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
         else:
             user_states[user_id] = {"step": 0, "data": {"userId": user_id}, "role": None, "editing": False}
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกบทบาทของคุณ (นักเรียน / อาจารย์ / แอดมิน):"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกบทบาทของคุณ ให้พิมพ์บทบาทตามต่อไปนี้ (นักเรียน / อาจารย์ / แอดมิน):"))
         return
 
     # ถ้ามี state
@@ -170,13 +170,13 @@ def handle_message(event):
                 state["editing"] = True
                 if role == "นักเรียน":
                     state["step"] = 1
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ (เช่น .ธนชัย นันทะโย.):"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ พิมพ์ชื่อของคุณ (เช่น .ธนชัย นันทะโย.):"))
                 elif role == "อาจารย์":
                     state["step"] = 10
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ (เช่น .อาจารย์มัน.):"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ พิมพ์ชื่อของคุณ (เช่น .อาจารย์มัน.):"))
                 elif role == "แอดมิน":
                     state["step"] = 21
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ (เช่น .ธนชัย นันทะโย.):"))
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่ พิมพ์ชื่อของคุณ (เช่น .ธนชัย นันทะโย.):"))
             elif answer in ["ไม่", "ไม่ใช่", "No", "no", "n", "N"]:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="ไม่แก้ไขโปรไฟล์"))
                 del user_states[user_id]
@@ -194,10 +194,10 @@ def handle_message(event):
             state["data"]["บทบาท"] = role
             if role == "นักเรียน":
                 state["step"] = 1
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ (เช่น .ธนชัย นันทะโย.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ พิมพ์ชื่อของคุณ (เช่น .ธนชัย นันทะโย.):"))
             elif role == "อาจารย์":
                 state["step"] = 10
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ (เช่น .อาจารย์มัน.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อ พิมพ์ชื่อของคุณ (เช่น .อาจารย์มัน.):"))
             elif role == "แอดมิน":
                 state["step"] = 20
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกรหัสผ่าน:"))
@@ -208,15 +208,15 @@ def handle_message(event):
             if step == 1:
                 state["data"]["ชื่อ"] = text
                 state["step"] = 2
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง (เช่น ถ้าอยู่ห้อง5/4 ให้เขียน .54.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง พิมพ์ห้องของคุณ (เช่น ถ้าอยู่ห้อง5/4 ให้เขียน .54.):"))
             elif step == 2:
                 state["data"]["ห้อง"] = text
                 state["step"] = 3
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเลขที่ (เช่น .8.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเลขที่ พิมพ์เลขที่ของคุณ (เช่น .8.):"))
             elif step == 3:
                 state["data"]["เลขที่"] = text
                 state["step"] = 4
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน (เช่น ถ้าอยู่วันพุธ ให้เขียน .พุธ.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน พิมพ์เวรวันของคุณ (เช่น ถ้าอยู่วันพุธ ให้เขียน .พุธ.):"))
             elif step == 4:
                 state["data"]["เวรวัน"] = text
                 result = save_profile_to_sheets(state["data"])
@@ -231,7 +231,7 @@ def handle_message(event):
             if step == 10:
                 state["data"]["ชื่อ"] = text
                 state["step"] = 11
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง (เช่น ถ้าอยู่ห้อง5/4 ให้เขียน .54.):"))
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง พิมพ์ห้องของคุณ (เช่น ถ้าอยู่ห้อง5/4 ให้เขียน .54.):"))
             elif step == 11:
                 state["data"]["ห้อง"] = text
                 state["data"]["เลขที่"] = "-"
