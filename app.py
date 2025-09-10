@@ -6,10 +6,12 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
-
+import pytz
 # ===== LINE Bot Config =====
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+BANGKOK_TZ = pytz.timezone("Asia/Bangkok")
+
 
 if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
     raise ValueError("Missing LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_SECRET")
@@ -79,7 +81,7 @@ def check_duty_log(room, date):
 
 # ===== ระบบแจ้งเตือนเวร =====
 def send_duty_reminder():
-    today = datetime.now()
+    today = datetime.now(BANGKOK_TZ)
     today_name = today.strftime("%A")
     today_thai = {
         "Monday": "จันทร์", "Tuesday": "อังคาร", "Wednesday": "พุธ",
@@ -112,8 +114,8 @@ def run_reminder():
 
 # ===== ตรวจ 17:00 ว่ายังไม่ส่งหลักฐาน =====
 def check_missing_evidence():
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_name = datetime.now().strftime("%A")
+    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    today_name = datetime.now(BANGKOK_TZ).strftime("%A")
     today_thai = {"Monday":"จันทร์","Tuesday":"อังคาร","Wednesday":"พุธ","Thursday":"พฤหัสบดี","Friday":"ศุกร์"}.get(today_name)
     if not today_thai: return
 
@@ -300,14 +302,14 @@ def handle_message(event):
 
     # เริ่มส่งหลักฐาน
     if text == "หลักฐานการทำเวร":
-        now = datetime.now().strftime("%H:%M")
+        now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
         if not ("00:00" <= now <= "17:00"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ส่งได้เฉพาะเวลา 14:40 - 17:00"))
             return
         result = get_profile_from_sheets(user_id)
         if not result.get("ok"): return
         profile = result["profile"]
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         r = check_duty_log(profile["ห้อง"], today)
         if r.get("found"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ห้องนี้ส่งหลักฐานแล้ว"))
@@ -325,7 +327,7 @@ def handle_image(event):
     # เก็บ URL ไว้ (จริงๆ ต้องดาวน์โหลดแล้วอัปโหลดไป storage ของคุณ)
     state["evidence"].append(content_url)
     if len(state["evidence"])==3:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         log = {
             "userId": user_id,
             "ห้อง": state["data"]["ห้อง"],
