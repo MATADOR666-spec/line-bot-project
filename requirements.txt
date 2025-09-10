@@ -3,3 +3,4 @@ line-bot-sdk==3.18.1
 gunicorn==21.2.0
 requests==2.32.3
 schedule==1.2.2
+pytz==2025.1

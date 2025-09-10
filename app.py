@@ -1,17 +1,16 @@
 import os
 import requests
-import time
 from datetime import datetime
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 import pytz
+
 # ===== LINE Bot Config =====
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 BANGKOK_TZ = pytz.timezone("Asia/Bangkok")
-
 
 if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
     raise ValueError("Missing LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_SECRET")
@@ -22,13 +21,12 @@ handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
 # ===== Google Apps Script Config =====
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwO2eVHVWzLU9uOaVW2fXY3Eh02IJyFWCLjPYpBdDc3O8_uE5U5n_FuFpbqsOELKmR20w/exec"   # <== ใส่ของคุณเอง
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwO2eVHVWzLU9uOaVW2fXY3Eh02IJyFWCLjPYpBdDc3O8_uE5U5n_FuFpbqsOELKmR20w/exec"
 SECRET_CODE = "my_secret_code"
 ADMIN_PASS = "8264"
 
 # ===== เก็บ state =====
-user_states = {}  
-# { userId: {"step": int, "role": str, "data": {}, "editing": bool, "evidence": []} }
+user_states = {}
 
 # ===== Helper =====
 def get_profile_from_sheets(user_id):
@@ -159,12 +157,12 @@ def handle_message(event):
     user_id = event.source.user_id
     text = (event.message.text or "").strip()
 
-    # เรียกโปรไฟล์
+    # เริ่มจากพิมพ์ "โปรไฟล์"
     if text == "โปรไฟล์":
         result = get_profile_from_sheets(user_id)
         if result.get("ok") and "profile" in result:
             profile = result["profile"]
-            msg = f"""คุณมีข้อมูลอยู่แล้ว:            
+            msg = f"""คุณมีข้อมูลอยู่แล้ว:
 ชื่อ: {profile.get("ชื่อ")}
 ห้อง: {profile.get("ห้อง")}
 เลขที่: {profile.get("เลขที่")}
@@ -299,11 +297,10 @@ def handle_message(event):
                 del user_states[user_id]
             return
 
-
     # เริ่มส่งหลักฐาน
     if text == "หลักฐานการทำเวร":
         now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
-        if not ("00:00" <= now <= "17:00"):
+        if not ("14:40" <= now <= "17:00"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ส่งได้เฉพาะเวลา 14:40 - 17:00"))
             return
         result = get_profile_from_sheets(user_id)
@@ -323,8 +320,6 @@ def handle_image(event):
     if user_id not in user_states or user_states[user_id].get("step")!="evidence": return
     state = user_states[user_id]
     content_url = f"https://api-data.line.me/v2/bot/message/{event.message.id}/content"
-    headers = {"Authorization": f"Bearer {CHANNEL_ACCESS_TOKEN}"}
-    # เก็บ URL ไว้ (จริงๆ ต้องดาวน์โหลดแล้วอัปโหลดไป storage ของคุณ)
     state["evidence"].append(content_url)
     if len(state["evidence"])==3:
         today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
@@ -339,7 +334,6 @@ def handle_image(event):
         }
         res = save_duty_log(log)
         if res.get("ok"):
-            # แจ้งอาจารย์
             profiles = get_all_profiles()
             for t in profiles["profiles"]:
                 if t.get("บทบาท")=="อาจารย์" and str(t.get("ห้อง"))==str(state["data"]["ห้อง"]):
