@@ -327,9 +327,12 @@ def handle_image(event):
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
     # ส่ง binary ไป Apps Script
-    files = {"file": img_data}
-    payload = {"secret": SECRET_CODE, "action": "uploadEvidence", "userId": user_id}
-    res = requests.post(APPS_SCRIPT_URL, data=payload, files=files)
+    headers = {
+        "secret": SECRET_CODE,
+        "action": "uploadEvidence",
+        "userId": user_id
+    }
+    res = requests.post(APPS_SCRIPT_URL, headers=headers, data=img_data)
     result = res.json()
 
     if not result.get("ok"):
