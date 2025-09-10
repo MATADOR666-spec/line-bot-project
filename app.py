@@ -103,7 +103,7 @@ def send_duty_reminder():
 # รัน schedule 2 เวลา
 def run_schedule():
     schedule.every().day.at("15:20").do(send_duty_reminder)
-    schedule.every().day.at("19:55").do(send_duty_reminder)
+    schedule.every().day.at("20:05").do(send_duty_reminder)
     while True:
         schedule.run_pending()
         time.sleep(1)
