@@ -22,7 +22,7 @@ handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
 # ===== Google Apps Script Config =====
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwyL_vwQfjydop1nJTy_Eho835HbpCA9DeoX-1tzgOuA0PVhWYIWy3LfNbWxbFIZ9lVoQ/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzBfKSVms6KCYeaFdQvLKhvYFCn7SYNBvdGDSQ8dC-89kgB7pcMZSwCXO_m2h1Jg0PD0g/exec"
 SECRET_CODE = "my_secret_code"
 ADMIN_PASS = "8264"
 
@@ -100,16 +100,14 @@ def send_duty_reminder():
             except Exception as e:
                 print("ERROR push_message:", e)
 
-# รัน schedule 2 เวลา
-def run_schedule():
-    schedule.every().day.at("8:20").do(send_duty_reminder)
-    schedule.every().day.at("14:20").do(send_duty_reminder)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-threading.Thread(target=run_schedule, daemon=True).start()
-
+@app.route("/run-reminder", methods=["GET"])
+def run_reminder():
+    try:
+        send_duty_reminder()
+        return "Reminder sent", 200
+    except Exception as e:
+        return f"Error: {e}", 500
+    
 # ===== Routes =====
 @app.route("/", methods=["GET"])
 def home():
