@@ -6,6 +6,7 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 import pytz
+import base64
 
 # ===== LINE Bot Config =====
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -342,18 +343,21 @@ def handle_image(event):
     content = line_bot_api.get_message_content(event.message.id)
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
-    # ส่ง binary ไป Apps Script
+    # แปลงเป็น base64
+    img_b64 = base64.b64encode(img_data).decode("utf-8")
+
+    # ส่ง JSON ไป Apps Script
+    payload = {
+        "secret": SECRET_CODE,
+        "action": "uploadEvidence",
+        "userId": user_id,
+        "fileName": f"evidence_{len(state['evidence'])+1}.jpg",
+        "fileData": img_b64
+    }
+
     try:
-        files = {
-            "file": ("evidence.jpg", img_data, "image/jpeg")
-        }
-        data = {
-            "secret": SECRET_CODE,
-            "action": "uploadEvidence",
-            "userId": user_id
-        }
-        res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=20)
-        print("📡 Upload status:", res.status_code, res.text)  # debug
+        res = requests.post(APPS_SCRIPT_URL, json=payload, timeout=20)
+        print("📡 Upload status:", res.status_code, res.text)
         result = res.json()
     except Exception as e:
         print("❌ Upload error:", e)
@@ -367,7 +371,7 @@ def handle_image(event):
     # เก็บ URL ที่ได้
     state["evidence"].append(result["url"])
 
-    # ถ้าครบ 3 รูปแล้ว บันทึกลง Duty Log
+    # ถ้าครบ 3 รูปแล้ว
     if len(state["evidence"]) == 3:
         today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         log = {
@@ -383,20 +387,16 @@ def handle_image(event):
             "สถานะ": "Submitted"
         }
 
-        res = save_duty_log(log)
-        if res.get("ok"):
-            profiles = get_all_profiles()
-            for t in profiles["profiles"]:
-                if t.get("บทบาท") == "อาจารย์" and str(t.get("ห้อง")) == str(state["data"]["ห้อง"]):
-                    line_bot_api.push_message(
-                        t["userId"],
-                        TextSendMessage(text=f"✅ ห้อง {state['data']['ห้อง']} เวรวัน{state['data']['เวรวัน']} ส่งหลักฐานครบแล้ว")
-                    )
+        res = requests.post(APPS_SCRIPT_URL, json={"secret": SECRET_CODE, "action": "addDutyLog", **log})
+        result = res.json()
+
+        if result.get("ok"):
             line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
         else:
             line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
 
         del user_states[user_id]
+
 
 # ===== Run =====
 if __name__ == "__main__":
