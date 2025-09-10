@@ -303,16 +303,32 @@ def handle_message(event):
         if not ("00:40" <= now <= "17:00"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ส่งได้เฉพาะเวลา 14:40 - 17:00"))
             return
+
         result = get_profile_from_sheets(user_id)
         if not result.get("ok"): return
         profile = result["profile"]
+
+       # เช็คว่า role ถูกต้อง
+        if profile.get("บทบาท") not in ["นักเรียน", "แอดมิน"]:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ เฉพาะนักเรียนและแอดมินเท่านั้นที่ส่งหลักฐานได้"))
+            return
+
         today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         r = check_duty_log(profile["ห้อง"], today)
         if r.get("found"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ห้องนี้ส่งหลักฐานแล้ว"))
             return
-        user_states[user_id] = {"step":"evidence","data":profile,"evidence":[]}
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณาส่งรูป 3 รูปต่อไปนี้"))
+
+        # เก็บ role ด้วย
+        user_states[user_id] = {
+            "step": "evidence",
+            "data": profile,
+            "evidence": [],
+            "role": profile.get("บทบาท"),
+            "editing": False
+        }
+
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="📸 กรุณาส่งรูป 3 รูปต่อไปนี้"))
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
