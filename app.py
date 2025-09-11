@@ -343,20 +343,18 @@ def handle_image(event):
     content = line_bot_api.get_message_content(event.message.id)
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
-    # แปลงเป็น base64
-    img_b64 = base64.b64encode(img_data).decode("utf-8")
-
-    # ส่ง JSON ไป Apps Script
-    payload = {
+    # ส่งแบบ multipart ไป Apps Script
+    files = {
+        "file": (f"evidence_{len(state['evidence'])+1}.jpg", img_data, "image/jpeg")
+    }
+    data = {
         "secret": SECRET_CODE,
         "action": "uploadEvidence",
-        "userId": user_id,
-        "fileName": f"evidence_{len(state['evidence'])+1}.jpg",
-        "fileData": img_b64
+        "userId": user_id
     }
 
     try:
-        res = requests.post(APPS_SCRIPT_URL, json=payload, timeout=20)
+        res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=20)
         print("📡 Upload status:", res.status_code, res.text)
         result = res.json()
     except Exception as e:
