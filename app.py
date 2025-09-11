@@ -22,7 +22,7 @@ handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
 # ===== Google Apps Script Config =====
-APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwO2eVHVWzLU9uOaVW2fXY3Eh02IJyFWCLjPYpBdDc3O8_uE5U5n_FuFpbqsOELKmR20w/exec"
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwHNNOqy2QPycsroR_soj1JQeiENC-AtxMDLtJiAiLoj9g6T22qOBtk9j9nCq34Lprjxw/exec"
 SECRET_CODE = "my_secret_code"
 ADMIN_PASS = "8264"
 
