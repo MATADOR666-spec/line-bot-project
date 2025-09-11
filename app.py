@@ -7,6 +7,10 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 import pytz
 import base64
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+import io
 
 # ===== LINE Bot Config =====
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -331,6 +335,18 @@ def handle_message(event):
 
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="📸 กรุณาส่งรูป 3 รูปต่อไปนี้"))
 
+def images_to_pdf(images):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    for img_data in images:
+        img = ImageReader(io.BytesIO(img_data))
+        c.drawImage(img, 0, 0, width, height, preserveAspectRatio=True, mask='auto')
+        c.showPage()
+    c.save()
+    buffer.seek(0)
+    return buffer.read()
+
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     user_id = event.source.user_id
@@ -339,61 +355,42 @@ def handle_image(event):
 
     state = user_states[user_id]
 
-    # โหลดรูปจาก LINE
+    # โหลดรูปจาก LINE (binary)
     content = line_bot_api.get_message_content(event.message.id)
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
-    # ส่งแบบ multipart ไป Apps Script
-    files = {
-        "file": (f"evidence_{len(state['evidence'])+1}.jpg", img_data, "image/jpeg")
-    }
-    data = {
-        "secret": SECRET_CODE,
-        "action": "uploadEvidence",
-        "userId": user_id
-    }
+    # เก็บ binary ลง state
+    state["evidence"].append(img_data)
 
-    try:
-        res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=20)
-        print("📡 Upload status:", res.status_code, res.text)
-        result = res.json()
-    except Exception as e:
-        print("❌ Upload error:", e)
-        line_bot_api.push_message(user_id, TextSendMessage(text="❌ เกิดข้อผิดพลาดตอนอัพโหลดรูป"))
-        return
-
-    if not result.get("ok"):
-        line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดรูปไม่สำเร็จ: " + str(result)))
-        return
-
-    # เก็บ URL ที่ได้
-    state["evidence"].append(result["url"])
-
-    # ถ้าครบ 3 รูปแล้ว
+    # ถ้าครบ 3 รูปแล้ว → รวมเป็น PDF แล้วอัพโหลด
     if len(state["evidence"]) == 3:
-        today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
-        log = {
-            "userId": user_id,
-            "ห้อง": state["data"]["ห้อง"],
-            "เวรวัน": state["data"]["เวรวัน"],
-            "วันที่": today,
-            "เลขที่ผู้ส่ง": state["data"]["เลขที่"],
-            "URL รูปที่1": state["evidence"][0],
-            "URL รูปที่2": state["evidence"][1],
-            "URL รูปที่3": state["evidence"][2],
-            "เวลา": datetime.now(BANGKOK_TZ).strftime("%H:%M"),
-            "สถานะ": "Submitted"
+        pdf_data = images_to_pdf(state["evidence"])
+
+        files = {
+            "file": ("evidence.pdf", pdf_data, "application/pdf")
+        }
+        data = {
+            "secret": SECRET_CODE,
+            "action": "uploadEvidence",
+            "userId": user_id
         }
 
-        res = requests.post(APPS_SCRIPT_URL, json={"secret": SECRET_CODE, "action": "addDutyLog", **log})
-        result = res.json()
+        try:
+            res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=20)
+            print("📡 Upload status:", res.status_code, res.text)
+            result = res.json()
+        except Exception as e:
+            print("❌ Upload error:", e)
+            line_bot_api.push_message(user_id, TextSendMessage(text="❌ เกิดข้อผิดพลาดตอนอัพโหลด PDF"))
+            return
 
         if result.get("ok"):
-            line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว (รวมเป็น PDF)"))
         else:
-            line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดไม่สำเร็จ: " + str(result)))
 
         del user_states[user_id]
+
 
 
 # ===== Run =====
