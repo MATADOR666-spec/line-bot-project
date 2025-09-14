@@ -305,7 +305,7 @@ def handle_message(event):
     # เริ่มส่งหลักฐาน
     if text == "หลักฐานการทำเวร":
         now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
-        if not ("00:40" <= now <= "17:00"):
+        if not ("14:40" <= now <= "23:00"):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ส่งได้เฉพาะเวลา 14:40 - 17:00"))
             return
 
@@ -355,39 +355,51 @@ def handle_image(event):
 
     state = user_states[user_id]
 
-    # โหลดรูปจาก LINE (binary)
+    # โหลดรูปจาก LINE
     content = line_bot_api.get_message_content(event.message.id)
     img_data = b"".join([chunk for chunk in content.iter_content()])
 
     # เก็บ binary ลง state
     state["evidence"].append(img_data)
 
-    # ถ้าครบ 3 รูปแล้ว → รวมเป็น PDF แล้วอัพโหลด
+    # ถ้าครบ 3 รูป → ส่งไป Apps Script
     if len(state["evidence"]) == 3:
-        pdf_data = images_to_pdf(state["evidence"])
-
         files = {
-            "file": ("evidence.pdf", pdf_data, "application/pdf")
+            "file1": ("img1.jpg", state["evidence"][0], "image/jpeg"),
+            "file2": ("img2.jpg", state["evidence"][1], "image/jpeg"),
+            "file3": ("img3.jpg", state["evidence"][2], "image/jpeg"),
         }
         data = {
             "secret": SECRET_CODE,
             "action": "uploadEvidence",
-            "userId": user_id
+            "userId": user_id,
+            "ห้อง": state["data"]["ห้อง"],
+            "เวรวัน": state["data"]["เวรวัน"],
+            "เลขที่": state["data"]["เลขที่"]
         }
 
         try:
-            res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=20)
+            res = requests.post(APPS_SCRIPT_URL, data=data, files=files, timeout=30)
             print("📡 Upload status:", res.status_code, res.text)
             result = res.json()
         except Exception as e:
             print("❌ Upload error:", e)
-            line_bot_api.push_message(user_id, TextSendMessage(text="❌ เกิดข้อผิดพลาดตอนอัพโหลด PDF"))
+            line_bot_api.push_message(user_id, TextSendMessage(text="❌ เกิดข้อผิดพลาดตอนอัปโหลด"))
             return
 
         if result.get("ok"):
-            line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว (รวมเป็น PDF)"))
+            urls = result.get("urls", [])
+            # แจ้งอาจารย์
+            profiles = get_all_profiles()
+            for t in profiles.get("profiles", []):
+                if t.get("บทบาท") == "อาจารย์" and str(t.get("ห้อง")) == str(state["data"]["ห้อง"]):
+                    msg = "✅ ห้อง {ห้อง} เวรวัน{เวรวัน} ส่งหลักฐานครบแล้ว\n".format(**state["data"])
+                    msg += "\n".join([f"📎 {u}" for u in urls])
+                    line_bot_api.push_message(t["userId"], TextSendMessage(text=msg))
+            # แจ้งผู้ส่ง
+            line_bot_api.push_message(user_id, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
         else:
-            line_bot_api.push_message(user_id, TextSendMessage(text="❌ อัพโหลดไม่สำเร็จ: " + str(result)))
+            line_bot_api.push_message(user_id, TextSendMessage(text="❌ ห้องนี้มีการส่งไปแล้ว"))
 
         del user_states[user_id]
 
