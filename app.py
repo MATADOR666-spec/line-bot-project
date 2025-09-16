@@ -88,6 +88,11 @@ def view_duty_logs():
     logs = [dict(r) for r in rows]
     return render_template("duty_logs.html", logs=logs)
 
+@app.route("/init-db")
+def init_database():
+    init_db()
+    return "DB initialized", 200
+
 # ===== API Routes =====
 @app.route("/profiles", methods=["GET"])
 def get_profiles():
