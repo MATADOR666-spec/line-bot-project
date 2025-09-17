@@ -6,6 +6,7 @@ from flask import Flask, request, abort, jsonify, render_template
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import ImageMessage
 import pytz
 
 # ===== LINE Bot Config =====
@@ -333,11 +334,28 @@ def handle_message(event):
         today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
         weekday = datetime.now(BANGKOK_TZ).strftime("%A")  # Monday, Tuesday,...
 
-        # เช็คว่าเวรวันตรงกับวันนี้หรือไม่
-        if profile["เวรวัน"] not in ["จันทร์","อังคาร","พุธ","พฤหัสบดี","ศุกร์"]:
-            line_bot_api.reply_message(event.reply_token,
-                TextSendMessage(text="วันนี้ไม่ใช่วันเวรของคุณ"))
+        today_thai = {
+            "Monday": "จันทร์",
+            "Tuesday": "อังคาร",
+            "Wednesday": "พุธ",
+            "Thursday": "พฤหัสบดี",
+            "Friday": "ศุกร์"
+        }[datetime.now(BANGKOK_TZ).strftime("%A")]
+
+        if profile["เวรวัน"] != today_thai:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"❌ วันนี้ไม่ใช่วันเวรของคุณ (เวรวัน: {profile['เวรวัน']}, วันนี้: {today_thai})")
+            )
             return
+        now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
+        if not ("14:40" <= now <= "17:00"):
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="❌ ส่งหลักฐานได้เฉพาะเวลา 14:40 - 17:00")
+            )
+            return
+
 
         # เช็คว่ามีการส่งแล้วหรือยัง
         row = query_db("SELECT * FROM duty_logs WHERE ห้อง=? AND วันที่=?",
@@ -363,49 +381,112 @@ def handle_message(event):
         return
 
     # รับรูปภาพจาก user กรณีส่งหลักฐาน
-    if event.message.type == "image" and user_id in user_states:
-        state = user_states[user_id]
-        if state["step"] == 200:
-        # โหลดไฟล์จริงจาก LINE
-            message_content = line_bot_api.get_message_content(event.message.id)
-            file_path = f"static/uploads/{event.message.id}.jpg"
-            with open(file_path, "wb") as f:
-                for chunk in message_content.iter_content():
-                    f.write(chunk)
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image(event):
+    user_id = event.source.user_id
+    if user_id not in user_states: return
+    state = user_states[user_id]
+    if state["step"] != 200: return
 
-        # gen URL สำหรับเก็บใน DB
-            domain = os.getenv("DOMAIN", "https://line-bot-project-hjaq.onrender.com")
-            content_url = f"{domain}/{file_path}"
+    # โหลดไฟล์จริงจาก LINE
+    message_content = line_bot_api.get_message_content(event.message.id)
+    file_path = f"static/uploads/{event.message.id}.jpg"
+    with open(file_path, "wb") as f:
+        for chunk in message_content.iter_content():
+            f.write(chunk)
 
-            state["images"].append(content_url)
+    # gen URL
+    domain = os.getenv("DOMAIN", "https://line-bot-project-hjaq.onrender.com")
+    content_url = f"{domain}/{file_path}"
 
-            if len(state["images"]) < 3:
-                line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"📷 ได้รับรูป {len(state['images'])}/3 กรุณาส่งต่อ")
+    state["images"].append(content_url)
+
+    if len(state["images"]) < 3:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=f"📷 ได้รับรูป {len(state['images'])}/3 กรุณาส่งต่อ")
+        )
+    else:
+        # ---- บันทึก DB ----
+        query_db("""INSERT INTO duty_logs
+            (userId, วันที่, ห้อง, เวรวัน, เลขที่ผู้ส่ง, url1, url2, url3, เวลา, สถานะ)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                state["data"]["userId"],
+                datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
+                state["data"]["ห้อง"],
+                state["data"]["เวรวัน"],
+                state["data"]["เลขที่"],
+                state["images"][0], state["images"][1], state["images"][2],
+                datetime.now(BANGKOK_TZ).strftime("%H:%M:%S"),
+                "ส่งแล้ว"
+            )
+        )
+
+        # ---- แจ้งอาจารย์ ----
+        teachers = query_db("SELECT * FROM profiles WHERE ห้อง=? AND บทบาท='อาจารย์'", (state["data"]["ห้อง"],))
+        for t in teachers:
+            line_bot_api.push_message(
+                t["userId"],
+                TextSendMessage(text=f"✅ ห้อง {state['data']['ห้อง']} ส่งหลักฐานแล้ว ดูได้ที่ {domain}/duty-logs/view")
+            )
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="✅ ส่งหลักฐานเรียบร้อยแล้ว")
+        )
+        del user_states[user_id]
+
+def check_missing_evidence():
+    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    today_thai = {
+        "Monday": "จันทร์",
+        "Tuesday": "อังคาร",
+        "Wednesday": "พุธ",
+        "Thursday": "พฤหัสบดี",
+        "Friday": "ศุกร์"
+    }[datetime.now(BANGKOK_TZ).strftime("%A")]
+
+    profiles = query_db("SELECT * FROM profiles WHERE เวรวัน=?", (today_thai,))
+    for p in profiles:
+        room = p["ห้อง"]
+        log = query_db("SELECT * FROM duty_logs WHERE ห้อง=? AND วันที่=?", (room, today), one=True)
+        if not log:
+            teachers = query_db("SELECT * FROM profiles WHERE ห้อง=? AND บทบาท='อาจารย์'", (room,))
+            for t in teachers:
+                line_bot_api.push_message(
+                    t["userId"],
+                    TextSendMessage(text=f"⚠️ ห้อง {room} เวรวัน{today_thai} ยังไม่ได้ส่งหลักฐาน")
                 )
-            else:
-            # บันทึกลง DB
-                query_db("""INSERT INTO duty_logs
-                    (userId, วันที่, ห้อง, เวรวัน, เลขที่ผู้ส่ง, url1, url2, url3, เวลา, สถานะ)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        state["data"]["userId"],
-                        datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
-                        state["data"]["ห้อง"],
-                        state["data"]["เวรวัน"],
-                        state["data"]["เลขที่"],
-                        state["images"][0], state["images"][1], state["images"][2],
-                        datetime.now(BANGKOK_TZ).strftime("%H:%M:%S"),
-                        "ส่งแล้ว"
-                    )
-                )
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="✅ ส่งหลักฐานเรียบร้อยแล้ว")
-                )
-                del user_states[user_id]
 
+@app.route("/run-check-evidence", methods=["GET"])
+def run_check_evidence():
+    check_missing_evidence()
+    return "Check complete", 200
+
+def send_duty_reminder():
+    today_thai = {
+        "Monday": "จันทร์",
+        "Tuesday": "อังคาร",
+        "Wednesday": "พุธ",
+        "Thursday": "พฤหัสบดี",
+        "Friday": "ศุกร์"
+    }.get(datetime.now(BANGKOK_TZ).strftime("%A"))
+
+    if not today_thai: return  # เสาร์-อาทิตย์ไม่ส่ง
+
+    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    profiles = query_db("SELECT * FROM profiles WHERE เวรวัน=?", (today_thai,))
+    for p in profiles:
+        line_bot_api.push_message(
+            p["userId"],
+            TextSendMessage(text=f"📢 แจ้งเตือนเวรประจำวันที่ {today} (วัน{today_thai})\nห้อง: {p['ห้อง']}\nชื่อ: {p['ชื่อ']}")
+        )
+
+@app.route("/run-reminder", methods=["GET"])
+def run_reminder():
+    send_duty_reminder()
+    return "Reminder sent", 200
 
 
 # ===== Run =====
