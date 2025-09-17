@@ -1,30 +1,24 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Profiles</title>
-</head>
-<body>
-  <h1>📋 Profiles</h1>
-  <table border="1">
-    <tr>
-      <th>userId</th>
-      <th>ชื่อ</th>
-      <th>ห้อง</th>
-      <th>เลขที่</th>
-      <th>บทบาท</th>
-      <th>เวรวัน</th>
-    </tr>
-    {% for p in profiles %}
-    <tr>
-      <td>{{ p["userId"] }}</td>
-      <td>{{ p["ชื่อ"] }}</td>
-      <td>{{ p["ห้อง"] }}</td>
-      <td>{{ p["เลขที่"] }}</td>
-      <td>{{ p["บทบาท"] }}</td>
-      <td>{{ p["เวรวัน"] }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</body>
-</html>
+{% extends "layout.html" %}
+{% block content %}
+<h2>👥 ข้อมูลโปรไฟล์</h2>
+<table>
+  <tr>
+    <th>userId</th>
+    <th>ชื่อ</th>
+    <th>ห้อง</th>
+    <th>เลขที่</th>
+    <th>บทบาท</th>
+    <th>เวรวัน</th>
+  </tr>
+  {% for p in profiles %}
+  <tr>
+    <td>{{ p["userId"] }}</td>
+    <td>{{ p["ชื่อ"] }}</td>
+    <td>{{ p["ห้อง"] }}</td>
+    <td>{{ p["เลขที่"] }}</td>
+    <td>{{ p["บทบาท"] }}</td>
+    <td>{{ p["เวรวัน"] }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
