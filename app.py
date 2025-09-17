@@ -366,15 +366,26 @@ def handle_message(event):
     if event.message.type == "image" and user_id in user_states:
         state = user_states[user_id]
         if state["step"] == 200:
-            # เก็บ URL ไว้ (ในจริงๆ ต้องดึง content จาก LINE API → upload storage → gen link)
-            content_url = f"https://fake-link/{event.message.id}.jpg"
+        # โหลดไฟล์จริงจาก LINE
+            message_content = line_bot_api.get_message_content(event.message.id)
+            file_path = f"static/uploads/{event.message.id}.jpg"
+            with open(file_path, "wb") as f:
+                for chunk in message_content.iter_content():
+                    f.write(chunk)
+
+        # gen URL สำหรับเก็บใน DB
+            domain = os.getenv("DOMAIN", "https://your-app.onrender.com")
+            content_url = f"{domain}/{file_path}"
+
             state["images"].append(content_url)
 
             if len(state["images"]) < 3:
-                line_bot_api.reply_message(event.reply_token,
-                    TextSendMessage(text=f"📷 ได้รับรูป {len(state['images'])}/3 กรุณาส่งต่อ"))
+                line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"📷 ได้รับรูป {len(state['images'])}/3 กรุณาส่งต่อ")
+                )
             else:
-                # บันทึก DB
+            # บันทึกลง DB
                 query_db("""INSERT INTO duty_logs
                     (userId, วันที่, ห้อง, เวรวัน, เลขที่ผู้ส่ง, url1, url2, url3, เวลา, สถานะ)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -389,10 +400,12 @@ def handle_message(event):
                         "ส่งแล้ว"
                     )
                 )
-                line_bot_api.reply_message(event.reply_token,
-                    TextSendMessage(text="✅ บันทึกหลักฐานเรียบร้อยแล้ว"))
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="✅ ส่งหลักฐานเรียบร้อยแล้ว")
+                )
                 del user_states[user_id]
-        return
+
 
 
 # ===== Run =====

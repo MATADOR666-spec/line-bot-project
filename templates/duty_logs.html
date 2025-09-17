@@ -3,18 +3,26 @@
 <head>
   <meta charset="utf-8">
   <title>Duty Logs</title>
+  <style>
+    body { font-family: Tahoma, sans-serif; background: #f5f5f5; padding: 20px; }
+    h1 { color: #333; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background: #eee; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
 </head>
 <body>
   <h1>📷 หลักฐานเวร</h1>
-  <table border="1">
+  <table>
     <tr>
       <th>วันที่</th>
       <th>ห้อง</th>
       <th>เวรวัน</th>
       <th>เลขที่ผู้ส่ง</th>
-      <th>รูป 1</th>
-      <th>รูป 2</th>
-      <th>รูป 3</th>
+      <th>รูปภาพ</th>
+      <th>เวลา</th>
     </tr>
     {% for log in logs %}
     <tr>
@@ -22,9 +30,12 @@
       <td>{{ log["ห้อง"] }}</td>
       <td>{{ log["เวรวัน"] }}</td>
       <td>{{ log["เลขที่ผู้ส่ง"] }}</td>
-      <td><a href="{{ log['url1'] }}">ดูรูป</a></td>
-      <td><a href="{{ log['url2'] }}">ดูรูป</a></td>
-      <td><a href="{{ log['url3'] }}">ดูรูป</a></td>
+      <td>
+        <a href="{{ log['url1'] }}" target="_blank">รูป1</a> |
+        <a href="{{ log['url2'] }}" target="_blank">รูป2</a> |
+        <a href="{{ log['url3'] }}" target="_blank">รูป3</a>
+      </td>
+      <td>{{ log["เวลา"] }}</td>
     </tr>
     {% endfor %}
   </table>
