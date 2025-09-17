@@ -349,7 +349,7 @@ def handle_message(event):
             )
             return
         now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
-        if not ("14:40" <= now <= "17:00"):
+        if not ("00:00" <= now <= "17:00"):
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text="❌ ส่งหลักฐานได้เฉพาะเวลา 14:40 - 17:00")
