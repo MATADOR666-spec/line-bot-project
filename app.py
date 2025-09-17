@@ -374,7 +374,7 @@ def handle_message(event):
                     f.write(chunk)
 
         # gen URL สำหรับเก็บใน DB
-            domain = os.getenv("DOMAIN", "https://your-app.onrender.com")
+            domain = os.getenv("DOMAIN", "https://line-bot-project-hjaq.onrender.com")
             content_url = f"{domain}/{file_path}"
 
             state["images"].append(content_url)
