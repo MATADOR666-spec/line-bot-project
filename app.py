@@ -389,8 +389,10 @@ def handle_image(event):
     if state["step"] != 200: return
 
     # โหลดไฟล์จริงจาก LINE
+    os.makedirs("static/uploads", exist_ok=True)
     message_content = line_bot_api.get_message_content(event.message.id)
     file_path = f"static/uploads/{event.message.id}.jpg"
+    
     with open(file_path, "wb") as f:
         for chunk in message_content.iter_content():
             f.write(chunk)
