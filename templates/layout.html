@@ -1,101 +1,13 @@
-<!DOCTYPE html>
-<html lang="th">
+<!-- ใน layout.html -->
 <head>
-  <meta charset="utf-8">
-  <title>{{ title }}</title>
-  <style>
-    body {
-      font-family: "Segoe UI", Tahoma, sans-serif;
-      margin: 0;
-      background: linear-gradient(135deg, #f0f4ff, #e6f7ff);
-      color: #333;
-    }
+    <meta charset="utf-8">
+    <title>Duty Logs</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 
-    header {
-      background: #0066cc;
-      color: white;
-      padding: 15px 25px;
-      text-align: center;
-      font-size: 1.5em;
-      font-weight: bold;
-      letter-spacing: 1px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    }
-
-    nav {
-      background: #004080;
-      padding: 10px 20px;
-      display: flex;
-      gap: 20px;
-    }
-    nav a {
-      color: #fff;
-      text-decoration: none;
-      font-weight: 500;
-      transition: color 0.2s;
-    }
-    nav a:hover {
-      color: #ffdd57;
-    }
-
-    main {
-      padding: 20px;
-      max-width: 1100px;
-      margin: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-      background: white;
-      border-radius: 10px;
-      overflow: hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    th, td {
-      padding: 12px;
-      text-align: center;
-      border-bottom: 1px solid #ddd;
-    }
-    th {
-      background: #0066cc;
-      color: white;
-    }
-    tr:hover {
-      background: #f5faff;
-    }
-
-    .btn-link {
-      background: #0066cc;
-      color: white;
-      padding: 5px 10px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 0.9em;
-    }
-    .btn-link:hover {
-      background: #004d99;
-    }
-
-    footer {
-      text-align: center;
-      padding: 15px;
-      font-size: 0.9em;
-      background: #f0f0f0;
-      margin-top: 20px;
-    }
-  </style>
 </head>
 <body>
-  <header>📚 ระบบเวร</header>
-  <nav>
-    <a href="/">🏠 หน้าแรก</a>
-    <a href="/profiles/view">👤 โปรไฟล์</a>
-    <a href="/duty-logs/view">📷 หลักฐานเวร</a>
-  </nav>
-  <main>
     {% block content %}{% endblock %}
-  </main>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+
+     <img src="D:\line-bot-project\static\images\person.png" alt="">
 </body>
-</html>

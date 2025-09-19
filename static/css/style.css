@@ -1,0 +1,94 @@
+/* ============================
+   Global Style
+============================ */
+body {
+  font-family: "Tahoma", sans-serif;
+  background: #f5f9ff;
+  margin: 0;
+  padding: 0;
+  color: #333;
+}
+
+/* ============================
+   Navbar (ด้านบน)
+============================ */
+.navbar {
+  background: #1e1e40;
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #fff;
+}
+
+.navbar a {
+  color: #fff;
+  margin: 0 12px;
+  text-decoration: none;
+  font-weight: bold;
+  transition: 0.3s;
+}
+
+.navbar a:hover {
+  color: #ffd700;
+}
+
+/* ============================
+   Table (ตารางหลัก)
+============================ */
+.table-container {
+  margin: 40px auto;
+  width: 90%;
+  max-width: 900px;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+}
+
+.table-container h2 {
+  text-align: center;
+  background: #1e1e40;
+  color: #fff;
+  padding: 16px;
+  margin: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #2c2c54;
+  color: #fff;
+}
+
+th, td {
+  padding: 14px;
+  text-align: center;
+}
+
+tbody tr:nth-child(odd) {
+  background: #f0f4ff;
+}
+
+tbody tr:hover {
+  background: #dbe2ff;
+  transition: 0.2s;
+}
+
+/* ============================
+   Footer
+============================ */
+.footer {
+  text-align: center;
+  padding: 20px;
+  margin-top: 40px;
+  background: #1e1e40;
+  color: #fff;
+  font-size: 14px;
+}
+.selected {
+  background-color: #ffe082 !important;
+}
