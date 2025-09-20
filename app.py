@@ -26,8 +26,6 @@ line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 app = Flask(__name__)
 
-profiles = profiles_ws.get_all_records()
-room = state["data"]["ห้อง"]
 
 # ===== GOOGLE SHEETS =====
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -303,6 +301,7 @@ for p in profiles:
             )
         )
 
+
 def check_missing_evidence():
     today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
     weekday = datetime.now(BANGKOK_TZ).strftime("%A")
@@ -325,7 +324,7 @@ def check_missing_evidence():
             room = p["ห้อง"]
 
             # เช็คว่า duty log วันนี้มีคนส่งแล้วหรือยัง
-            logs = duty_logs_ws.get_all_records()
+            logs = duty_ws.get_all_records()
             found = any(
                 l["ห้อง"] == room and l["วันที่"] == today
                 for l in logs
