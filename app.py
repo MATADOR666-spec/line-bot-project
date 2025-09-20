@@ -1,17 +1,22 @@
 import os
-import sqlite3
+import gspread
 import requests
+import pytz
+import schedule
+import threading
+import time
 from datetime import datetime
-from flask import Flask, request, abort, jsonify, render_template
+from flask import Flask, request, abort, render_template
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from linebot.models import ImageMessage
-import pytz
+from oauth2client.service_account import ServiceAccountCredentials
 
-# ===== LINE Bot Config =====
+# ===== CONFIG =====
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+DOMAIN = os.getenv("DOMAIN", "https://line-bot-project-hjaq.onrender.com")
+ADMIN_PASS = "8264"
 BANGKOK_TZ = pytz.timezone("Asia/Bangkok")
 
 if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
@@ -19,144 +24,40 @@ if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
 
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
-
 app = Flask(__name__)
 
-DB_NAME = "data.db"
-ADMIN_PASS = "8264"
-user_states = {}   # เก็บ state ของผู้ใช้
+profiles = profiles_ws.get_all_records()
+room = state["data"]["ห้อง"]
 
-# ===== DB Helper =====
-def query_db(query, args=(), one=False):
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(query, args)
-    rv = cur.fetchall()
-    conn.commit()
-    conn.close()
-    return (rv[0] if rv else None) if one else rv
+# ===== GOOGLE SHEETS =====
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+gc = gspread.authorize(creds)
+SHEET = gc.open("DutyBot")
+profiles_ws = SHEET.worksheet("profiles")
+duty_ws = SHEET.worksheet("duty_logs")
+holidays_ws = SHEET.worksheet("holidays")
 
-def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+user_states = {}
 
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS profiles (
-        userId TEXT PRIMARY KEY,
-        ชื่อ TEXT,
-        ห้อง TEXT,
-        เลขที่ TEXT,
-        บทบาท TEXT,
-        เวรวัน TEXT,
-        วันที่สมัคร TEXT,
-        สถานะ TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS duty_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userId TEXT,
-        วันที่ TEXT,
-        ห้อง TEXT,
-        เวรวัน TEXT,
-        เลขที่ผู้ส่ง TEXT,
-        url1 TEXT,
-        url2 TEXT,
-        url3 TEXT,
-        เวลา TEXT,
-        สถานะ TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
+# ===== FLASK ROUTES =====
 @app.route("/")
 def index():
     return render_template("index.html")
 
 @app.route("/profiles/view")
 def view_profiles():
-    rows = query_db("SELECT * FROM profiles")
-    profiles = [dict(r) for r in rows]
-    return render_template("profiles.html", profiles=profiles)
+    rows = profiles_ws.get_all_records()
+    return render_template("profiles.html", profiles=rows)
 
 @app.route("/duty-logs/view")
 def view_duty_logs():
-    rows = query_db("SELECT * FROM duty_logs ORDER BY วันที่ DESC")
-    logs = [dict(r) for r in rows]
-    return render_template("duty_logs.html", logs=logs)
+    rows = duty_ws.get_all_records()
+    return render_template("duty_logs.html", logs=rows)
 
-@app.route("/init-db")
-def init_database():
-    init_db()
-    return "DB initialized", 200
-
-
-# ===== API Routes =====
-@app.route("/profiles", methods=["GET"])
-def get_profiles():
-    rows = query_db("SELECT * FROM profiles")
-    profiles = [dict(r) for r in rows]
-    return jsonify({"ok": True, "profiles": profiles})
-
-@app.route("/profiles/<userId>", methods=["GET"])
-def get_profile(userId):
-    row = query_db("SELECT * FROM profiles WHERE userId=?", (userId,), one=True)
-    if row:
-        return jsonify({"ok": True, "profile": dict(row)})
-    return jsonify({"ok": False, "error": "Not found"})
-
-@app.route("/profiles", methods=["POST"])
-def add_profile():
-    data = request.json
-    query_db("""INSERT OR REPLACE INTO profiles
-        (userId, ชื่อ, ห้อง, เลขที่, บทบาท, เวรวัน, วันที่สมัคร, สถานะ)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            data["userId"], data["ชื่อ"], data["ห้อง"], data["เลขที่"],
-            data["บทบาท"], data["เวรวัน"],
-            datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
-            "Active"
-        )
-    )
-    return jsonify({"ok": True, "msg": "Profile saved"})
-
-@app.route("/duty-logs", methods=["GET"])
-def get_duty_logs():
-    rows = query_db("SELECT * FROM duty_logs ORDER BY วันที่ DESC")
-    logs = [dict(r) for r in rows]
-    return jsonify({"ok": True, "logs": logs})
-
-@app.route("/duty-logs", methods=["POST"])
-def add_duty_log():
-    data = request.json
-    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
-
-    # เช็คว่าห้องนี้มีการส่งแล้วหรือยัง
-    row = query_db("SELECT * FROM duty_logs WHERE ห้อง=? AND วันที่=?",
-                   (data["ห้อง"], today), one=True)
-    if row:
-        return jsonify({"ok": False, "error": "already submitted"})
-
-    query_db("""INSERT INTO duty_logs
-        (userId, วันที่, ห้อง, เวรวัน, เลขที่ผู้ส่ง, url1, url2, url3, เวลา, สถานะ)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            data["userId"], today, data["ห้อง"], data["เวรวัน"], data["เลขที่"],
-            data.get("url1",""), data.get("url2",""), data.get("url3",""),
-            datetime.now(BANGKOK_TZ).strftime("%H:%M:%S"),
-            "ส่งแล้ว"
-        )
-    )
-    return jsonify({"ok": True, "msg": "Duty log saved"})
-
-# ===== LINE Webhook =====
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    signature = request.headers.get("X-Line-Signature","")
+    signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
@@ -164,64 +65,67 @@ def webhook():
         abort(400)
     return "OK", 200
 
-# ===== Handle Messages =====
+# ===== HELPERS =====
+def today_str():
+    return datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+
+def now_time():
+    return datetime.now(BANGKOK_TZ).strftime("%H:%M:%S")
+
+def weekday_th():
+    days = {
+        "Monday": "จันทร์", "Tuesday": "อังคาร", "Wednesday": "พุธ",
+        "Thursday": "พฤหัสบดี", "Friday": "ศุกร์",
+        "Saturday": "เสาร์", "Sunday": "อาทิตย์"
+    }
+    eng = datetime.now(BANGKOK_TZ).strftime("%A")
+    return days[eng]
+
+def is_holiday():
+    today = today_str()
+    holidays = [row["date"] for row in holidays_ws.get_all_records()]
+    return today in holidays or weekday_th() in ["เสาร์", "อาทิตย์"]
+
+def check_missing_evidence():
+    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    weekday = datetime.now(BANGKOK_TZ).strftime("%A")
+    today_thai = {"Monday":"จันทร์","Tuesday":"อังคาร","Wednesday":"พุธ","Thursday":"พฤหัสบดี","Friday":"ศุกร์"}.get(weekday)
+    if not today_thai:
+        return
+
+
+# ===== LINE MESSAGE HANDLER =====
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = (event.message.text or "").strip()
 
-    # เริ่มจากพิมพ์ "โปรไฟล์"
+    # === START PROFILE ===
     if text == "โปรไฟล์":
-        row = query_db("SELECT * FROM profiles WHERE userId=?", (user_id,), one=True)
-        if row:
-            profile = dict(row)
+        records = profiles_ws.get_all_records()
+        profile = next((r for r in records if r["userId"] == user_id), None)
+        if profile:
             msg = f"""คุณมีข้อมูลอยู่แล้ว:
-ชื่อ: {profile.get("ชื่อ")}
-ห้อง: {profile.get("ห้อง")}
-เลขที่: {profile.get("เลขที่")}
-เวรวัน: {profile.get("เวรวัน")}
-บทบาท: {profile.get("บทบาท")}
+ชื่อ: {profile['ชื่อ']}
+ห้อง: {profile['ห้อง']}
+เลขที่: {profile['เลขที่']}
+เวรวัน: {profile['เวรวัน']}
+บทบาท: {profile['บทบาท']}
 
 คุณต้องการแก้ไขโปรไฟล์ไหม? (ใช่/ไม่)"""
-            user_states[user_id] = {
-                "step": 99,
-                "role": profile.get("บทบาท"),
-                "data": {"userId": user_id},
-                "editing": False
-            }
+            user_states[user_id] = {"step": 99, "role": profile["บทบาท"], "editing": False}
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=msg))
         else:
-            user_states[user_id] = {"step": 0, "data": {"userId": user_id}, "role": None, "editing": False}
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(
-                text="กรุณากรอกบทบาทของคุณ (นักเรียน / อาจารย์ / แอดมิน):"))
+            user_states[user_id] = {"step": 0, "data": {"userId": user_id}}
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกบทบาท (นักเรียน/อาจารย์/แอดมิน):"))
         return
 
-    # มี state อยู่แล้ว → กำลังสมัคร
+    # === HANDLE PROFILE STATES ===
     if user_id in user_states:
         state = user_states[user_id]
         step = state["step"]
 
-        # ---------- แก้ไขโปรไฟล์ ----------
-        if step == 99:
-            if text in ["ใช่","Yes","yes"]:
-                role = state["role"]
-                state["editing"] = True
-                if role == "นักเรียน":
-                    state["step"] = 1
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
-                elif role == "อาจารย์":
-                    state["step"] = 10
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
-                elif role == "แอดมิน":
-                    state["step"] = 21
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกชื่อใหม่:"))
-            else:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="ไม่แก้ไขโปรไฟล์"))
-                del user_states[user_id]
-            return
-
-        # ---------- เลือกบทบาท ----------
-        if step == 0:
+        if step == 0:  # เลือกบทบาท
             role = text
             if role not in ["นักเรียน", "อาจารย์", "แอดมิน"]:
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ กรุณาพิมพ์ว่า นักเรียน / อาจารย์ / แอดมิน"))
@@ -239,7 +143,7 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกรหัสผ่าน:"))
             return
 
-        # ---------- นักเรียน ----------
+        # --- นักเรียน --- #
         if state["role"] == "นักเรียน":
             if step == 1:
                 state["data"]["ชื่อ"] = text
@@ -255,20 +159,14 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน:"))
             elif step == 4:
                 state["data"]["เวรวัน"] = text
-                query_db("""INSERT OR REPLACE INTO profiles
-                    (userId, ชื่อ, ห้อง, เลขที่, บทบาท, เวรวัน, วันที่สมัคร, สถานะ)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        user_id, state["data"]["ชื่อ"], state["data"]["ห้อง"], state["data"]["เลขที่"],
-                        "นักเรียน", state["data"]["เวรวัน"],
-                        datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"), "Active"
-                    )
-                )
+                state["data"]["วันที่สมัคร"] = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+                state["data"]["สถานะ"] = "Active"
+                save_profile(state["data"])
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ บันทึกข้อมูลเรียบร้อย"))
                 del user_states[user_id]
             return
 
-        # ---------- อาจารย์ ----------
+        # --- อาจารย์ --- #
         if state["role"] == "อาจารย์":
             if step == 10:
                 state["data"]["ชื่อ"] = text
@@ -276,19 +174,16 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกห้อง:"))
             elif step == 11:
                 state["data"]["ห้อง"] = text
-                query_db("""INSERT OR REPLACE INTO profiles
-                    (userId, ชื่อ, ห้อง, เลขที่, บทบาท, เวรวัน, วันที่สมัคร, สถานะ)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        user_id, state["data"]["ชื่อ"], state["data"]["ห้อง"], "-", "อาจารย์", "-",
-                        datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"), "Active"
-                    )
-                )
+                state["data"]["เลขที่"] = "-"
+                state["data"]["เวรวัน"] = "-"
+                state["data"]["วันที่สมัคร"] = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+                state["data"]["สถานะ"] = "Active"
+                save_profile(state["data"])
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ บันทึกข้อมูลเรียบร้อย"))
                 del user_states[user_id]
             return
 
-        # ---------- แอดมิน ----------
+        # --- แอดมิน --- #
         if state["role"] == "แอดมิน":
             if step == 20:
                 if text != ADMIN_PASS:
@@ -310,189 +205,150 @@ def handle_message(event):
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="กรุณากรอกเวรวัน:"))
             elif step == 24:
                 state["data"]["เวรวัน"] = text
-                query_db("""INSERT OR REPLACE INTO profiles
-                    (userId, ชื่อ, ห้อง, เลขที่, บทบาท, เวรวัน, วันที่สมัคร, สถานะ)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        user_id, state["data"]["ชื่อ"], state["data"]["ห้อง"], state["data"]["เลขที่"],
-                        "แอดมิน", state["data"]["เวรวัน"],
-                        datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"), "Active"
-                    )
-                )
+                state["data"]["วันที่สมัคร"] = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+                state["data"]["สถานะ"] = "Active"
+                save_profile(state["data"])
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ บันทึกข้อมูลเรียบร้อย"))
                 del user_states[user_id]
             return
-
-    # ผู้ใช้สั่ง "หลักฐานการทำเวร"
+    
+    # === DUTY SUBMISSION ===
     if text == "หลักฐานการทำเวร":
-        profile = query_db("SELECT * FROM profiles WHERE userId=?", (user_id,), one=True)
+        records = profiles_ws.get_all_records()
+        profile = next((r for r in records if r["userId"] == user_id), None)
         if not profile:
-            line_bot_api.reply_message(event.reply_token,
-                TextSendMessage(text="❌ กรุณาลงทะเบียนโปรไฟล์ก่อน"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ กรุณาลงทะเบียนโปรไฟล์ก่อน"))
             return
 
-        today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
-        weekday = datetime.now(BANGKOK_TZ).strftime("%A")  # Monday, Tuesday,...
-
-        today_thai = {
-            "Monday": "จันทร์",
-            "Tuesday": "อังคาร",
-            "Wednesday": "พุธ",
-            "Thursday": "พฤหัสบดี",
-            "Friday": "ศุกร์"
-        }[datetime.now(BANGKOK_TZ).strftime("%A")]
-
-        if profile["เวรวัน"] != today_thai:
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text=f"❌ วันนี้ไม่ใช่วันเวรของคุณ (เวรวัน: {profile['เวรวัน']}, วันนี้: {today_thai})")
-            )
-            return
-        now = datetime.now(BANGKOK_TZ).strftime("%H:%M")
-        if not ("00:00" <= now <= "17:00"):
-            line_bot_api.reply_message(
-                event.reply_token,
-                TextSendMessage(text="❌ ส่งหลักฐานได้เฉพาะเวลา 14:40 - 17:00")
-            )
+        # ตรวจสอบวันเวลา
+        if is_holiday() or profile["เวรวัน"] != weekday_th():
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="วันนี้ไม่ใช่วันเวรของคุณ"))
             return
 
-
-        # เช็คว่ามีการส่งแล้วหรือยัง
-        row = query_db("SELECT * FROM duty_logs WHERE ห้อง=? AND วันที่=?",
-                       (profile["ห้อง"], today), one=True)
-        if row:
-            line_bot_api.reply_message(event.reply_token,
-                TextSendMessage(text="❌ ห้องนี้ส่งหลักฐานไปแล้ว"))
+        now_hhmm = datetime.now(BANGKOK_TZ).strftime("%H:%M")
+        if not ("14:40" <= now_hhmm <= "17:00"):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⏰ สามารถส่งได้เฉพาะ 14:40–17:00"))
             return
 
-        # ให้ user ส่งรูป 3 รูป
-        user_states[user_id] = {
-            "step": 200,
-            "data": {
-                "userId": user_id,
-                "ห้อง": profile["ห้อง"],
-                "เวรวัน": profile["เวรวัน"],
-                "เลขที่": profile["เลขที่"]
-            },
-            "images": []
-        }
-        line_bot_api.reply_message(event.reply_token,
-            TextSendMessage(text="กรุณาส่งรูปภาพ 3 รูป (ทีละรูป)"))
+        # ตรวจสอบว่าส่งแล้วหรือยัง
+        duty_today = duty_ws.get_all_records()
+        if any(r["ห้อง"] == profile["ห้อง"] and r["วันที่"] == today_str() for r in duty_today):
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ห้องนี้ส่งหลักฐานไปแล้ว"))
+            return
+
+        # เก็บ state
+        user_states[user_id] = {"step": 200, "images": [], "profile": profile}
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="📷 กรุณาส่งรูป 3 รูป (ทีละรูป)"))
         return
 
-    # รับรูปภาพจาก user กรณีส่งหลักฐาน
-@handler.add(MessageEvent, message=ImageMessage)
-def handle_image(event):
-    user_id = event.source.user_id
-    if user_id not in user_states: return
-    state = user_states[user_id]
-    if state["step"] != 200: return
+    # === HANDLE IMAGES ===
+    if event.message.type == "image" and user_id in user_states:
+        state = user_states[user_id]
+        if state["step"] == 200:
+            message_content = line_bot_api.get_message_content(event.message.id)
+            file_path = f"static/uploads/{event.message.id}.jpg"
+            with open(file_path, "wb") as f:
+                for chunk in message_content.iter_content():
+                    f.write(chunk)
 
-    # โหลดไฟล์จริงจาก LINE
-    os.makedirs("static/uploads", exist_ok=True)
-    message_content = line_bot_api.get_message_content(event.message.id)
-    file_path = f"static/uploads/{event.message.id}.jpg"
-    
-    with open(file_path, "wb") as f:
-        for chunk in message_content.iter_content():
-            f.write(chunk)
+            content_url = f"{DOMAIN}/{file_path}"
+            state["images"].append(content_url)
 
-    # gen URL
-    domain = os.getenv("DOMAIN", "https://line-bot-project-hjaq.onrender.com")
-    content_url = f"{domain}/{file_path}"
+            if len(state["images"]) < 3:
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📷 ได้รับรูป {len(state['images'])}/3 กรุณาส่งต่อ"))
+            else:
+                p = state["profile"]
+                duty_ws.append_row([
+                    today_str(), p["ห้อง"], p["เวรวัน"], p["เลขที่"],
+                    state["images"][0], state["images"][1], state["images"][2],
+                    now_time(), "ส่งแล้ว", p["userId"]
+                ])
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ ส่งหลักฐานเรียบร้อยแล้ว"))
 
-    state["images"].append(content_url)
+                # แจ้งอาจารย์
+                teachers = [r for r in profiles_ws.get_all_records() if r["บทบาท"] == "อาจารย์" and r["ห้อง"] == p["ห้อง"]]
+                for t in teachers:
+                    line_bot_api.push_message(t["userId"], TextSendMessage(
+                        text=f"📢 ห้อง {p['ห้อง']} ส่งหลักฐานเวรแล้ว ตรวจสอบได้ที่ {DOMAIN}/duty-logs/view"
+                    ))
 
-    if len(state["images"]) < 3:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=f"📷 ได้รับรูป {len(state['images'])}/3 กรุณาส่งต่อ")
-        )
-    else:
-        # ---- บันทึก DB ----
-        query_db("""INSERT INTO duty_logs
-            (userId, วันที่, ห้อง, เวรวัน, เลขที่ผู้ส่ง, url1, url2, url3, เวลา, สถานะ)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                state["data"]["userId"],
-                datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d"),
-                state["data"]["ห้อง"],
-                state["data"]["เวรวัน"],
-                state["data"]["เลขที่"],
-                state["images"][0], state["images"][1], state["images"][2],
-                datetime.now(BANGKOK_TZ).strftime("%H:%M:%S"),
-                "ส่งแล้ว"
+                del user_states[user_id]
+        return
+
+# ===== SCHEDULER (แจ้งเตือน) =====
+def job_notify():
+    if is_holiday():
+        return
+    today = weekday_th()
+    students = [r for r in profiles_ws.get_all_records() if r["เวรวัน"] == today and r["บทบาท"] == "นักเรียน"]
+    for s in students:
+        line_bot_api.push_message(s["userId"], TextSendMessage(text=f"📢 วันนี้เป็นวันเวรของคุณ ({today}) อย่าลืมทำเวร!"))
+
+schedule.every().day.at("15:20").do(job_notify)
+schedule.every().day.at("15:30").do(job_notify)
+
+def run_schedule():
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+threading.Thread(target=run_schedule, daemon=True).start()
+
+for p in profiles:
+    if p["บทบาท"] == "อาจารย์" and p["ห้อง"] == room:
+        line_bot_api.push_message(
+            p["userId"],
+            TextSendMessage(
+                text=f"📢 ห้อง {room} ส่งหลักฐานเรียบร้อยแล้ว\nตรวจสอบได้ที่: {domain}/duty-logs/view"
             )
         )
-
-        # ---- แจ้งอาจารย์ ----
-        teachers = query_db("SELECT * FROM profiles WHERE ห้อง=? AND บทบาท='อาจารย์'", (state["data"]["ห้อง"],))
-        for t in teachers:
-            line_bot_api.push_message(
-                t["userId"],
-                TextSendMessage(text=f"✅ ห้อง {state['data']['ห้อง']} ส่งหลักฐานแล้ว ดูได้ที่ {domain}/duty-logs/view")
-            )
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="✅ ส่งหลักฐานเรียบร้อยแล้ว")
-        )
-        del user_states[user_id]
 
 def check_missing_evidence():
     today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    weekday = datetime.now(BANGKOK_TZ).strftime("%A")
     today_thai = {
         "Monday": "จันทร์",
         "Tuesday": "อังคาร",
         "Wednesday": "พุธ",
         "Thursday": "พฤหัสบดี",
         "Friday": "ศุกร์"
-    }[datetime.now(BANGKOK_TZ).strftime("%A")]
+    }.get(weekday)
 
-    profiles = query_db("SELECT * FROM profiles WHERE เวรวัน=?", (today_thai,))
+    if not today_thai:
+        return
+
+    # ดึงข้อมูล profiles
+    profiles = profiles_ws.get_all_records()
+
     for p in profiles:
-        room = p["ห้อง"]
-        log = query_db("SELECT * FROM duty_logs WHERE ห้อง=? AND วันที่=?", (room, today), one=True)
-        if not log:
-            teachers = query_db("SELECT * FROM profiles WHERE ห้อง=? AND บทบาท='อาจารย์'", (room,))
-            for t in teachers:
-                line_bot_api.push_message(
-                    t["userId"],
-                    TextSendMessage(text=f"⚠️ ห้อง {room} เวรวัน{today_thai} ยังไม่ได้ส่งหลักฐาน")
-                )
+        if p["เวรวัน"] == today_thai and p["บทบาท"] == "นักเรียน":
+            room = p["ห้อง"]
+
+            # เช็คว่า duty log วันนี้มีคนส่งแล้วหรือยัง
+            logs = duty_logs_ws.get_all_records()
+            found = any(
+                l["ห้อง"] == room and l["วันที่"] == today
+                for l in logs
+            )
+
+            if not found:
+                # แจ้งอาจารย์ของห้องนี้
+                for t in profiles:
+                    if t["บทบาท"] == "อาจารย์" and t["ห้อง"] == room:
+                        line_bot_api.push_message(
+                            t["userId"],
+                            TextSendMessage(
+                                text=f"⚠️ ห้อง {room} เวรวัน{today_thai} ยังไม่ได้ส่งหลักฐาน"
+                            )
+                        )
 
 @app.route("/run-check-evidence", methods=["GET"])
 def run_check_evidence():
     check_missing_evidence()
     return "Check complete", 200
+        
 
-def send_duty_reminder():
-    today_thai = {
-        "Monday": "จันทร์",
-        "Tuesday": "อังคาร",
-        "Wednesday": "พุธ",
-        "Thursday": "พฤหัสบดี",
-        "Friday": "ศุกร์"
-    }.get(datetime.now(BANGKOK_TZ).strftime("%A"))
-
-    if not today_thai: return  # เสาร์-อาทิตย์ไม่ส่ง
-
-    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
-    profiles = query_db("SELECT * FROM profiles WHERE เวรวัน=?", (today_thai,))
-    for p in profiles:
-        line_bot_api.push_message(
-            p["userId"],
-            TextSendMessage(text=f"📢 แจ้งเตือนเวรประจำวันที่ {today} (วัน{today_thai})\nห้อง: {p['ห้อง']}\nชื่อ: {p['ชื่อ']}")
-        )
-
-@app.route("/run-reminder", methods=["GET"])
-def run_reminder():
-    send_duty_reminder()
-    return "Reminder sent", 200
-
-
-# ===== Run =====
+# ===== MAIN =====
 if __name__ == "__main__":
-    init_db()  # สร้าง DB ครั้งแรก
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
