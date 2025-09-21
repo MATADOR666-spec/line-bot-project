@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>ระบบเวร</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header>
+    <div class="menu">
+      <a href="/schedule">ตารางเวร</a>
+      <a href="/duty-logs/view">หลักฐานเวร</a>
+    </div>
+    <h1>ระบบเวร</h1>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    <img src="/static/images/mop.png" class="mop">
+    <img src="/static/images/cleaner.png" class="cleaner">
+  </footer>
+</body>
+</html>
