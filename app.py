@@ -35,10 +35,16 @@ ADMIN_PASS = "8264"
 
 # ===== Helper =====
 def get_profiles():
-    r = requests.get(SHEET_API_URL)
-    if r.status_code == 200:
-        return r.json().get("profiles", [])
+    try:
+        r = requests.get(SHEET_API_URL)
+        print("status:", r.status_code)
+        print("response text:", r.text)  # 👈 log เพื่อตรวจว่า API ส่งอะไรจริง ๆ
+        if r.status_code == 200:
+            return r.json().get("profiles", [])
+    except Exception as e:
+        print("get_profiles error:", e)
     return []
+
 
 def is_holiday(date_str):
     try:
@@ -51,8 +57,13 @@ def is_holiday(date_str):
         return False
 
 def save_profile(profile_data):
-    r = requests.post(SHEET_API_URL, json=profile_data)
-    return r.json()
+    try:
+        r = requests.post(SHEET_API_URL, json=profile_data)
+        print("save_profile response:", r.text)  # debug
+        return r.json()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 
 # ===== Routes =====
 @app.route("/")
