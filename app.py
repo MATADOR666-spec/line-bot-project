@@ -57,7 +57,7 @@ def save_profile(profile_data):
 # ===== Routes =====
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("duty_logs.html")
 
 @app.route("/duty-logs/view")
 def view_duty_logs():
