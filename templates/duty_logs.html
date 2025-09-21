@@ -1,27 +1,30 @@
-{% extends "layout.html" %}
+{% extends "base.html" %}
+
 {% block content %}
-<h2>📷 หลักฐานเวร</h2>
+<h2>📑 บันทึกการส่งหลักฐานเวร</h2>
 <table>
   <tr>
     <th>วันที่</th>
-    <th>ห้อง</th>
-    <th>เวรวัน</th>
-    <th>เลขที่ผู้ส่ง</th>
-    <th>รูปภาพ</th>
     <th>เวลา</th>
+    <th>ห้อง</th>
+    <th>เลขที่</th>
+    <th>เวรวัน</th>
+    <th>สถานะ</th>
+    <th>รูปภาพ</th>
   </tr>
   {% for log in logs %}
   <tr>
     <td>{{ log["วันที่"] }}</td>
-    <td>{{ log["ห้อง"] }}</td>
-    <td>{{ log["เวรวัน"] }}</td>
-    <td>{{ log["เลขที่ผู้ส่ง"] }}</td>
-    <td>
-      {% if log['url1'] %}<a class="btn-link" href="{{ log['url1'] }}" target="_blank">📷1</a>{% endif %}
-      {% if log['url2'] %}<a class="btn-link" href="{{ log['url2'] }}" target="_blank">📷2</a>{% endif %}
-      {% if log['url3'] %}<a class="btn-link" href="{{ log['url3'] }}" target="_blank">📷3</a>{% endif %}
-    </td>
     <td>{{ log["เวลา"] }}</td>
+    <td>{{ log["ห้อง"] }}</td>
+    <td>{{ log["เลขที่ผู้ส่ง"] }}</td>
+    <td>{{ log["เวรวัน"] }}</td>
+    <td>{{ log["สถานะ"] }}</td>
+    <td>
+      {% if log["url1"] %}<a href="{{ log['url1'] }}" target="_blank"><img src="{{ log['url1'] }}" width="80"></a>{% endif %}
+      {% if log["url2"] %}<a href="{{ log['url2'] }}" target="_blank"><img src="{{ log['url2'] }}" width="80"></a>{% endif %}
+      {% if log["url3"] %}<a href="{{ log['url3'] }}" target="_blank"><img src="{{ log['url3'] }}" width="80"></a>{% endif %}
+    </td>
   </tr>
   {% endfor %}
 </table>
