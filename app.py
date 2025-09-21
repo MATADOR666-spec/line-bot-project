@@ -57,11 +57,17 @@ def is_holiday(date_str):
         return False
 
 def save_profile(profile_data):
-    profile_data["secret"] = "my_secret_code"  # ต้องตรงกับ SECRET ใน Apps Script
-    r = requests.post(SHEET_API_URL, json=profile_data)
-    print("save_profile request:", profile_data)
-    print("save_profile response:", r.text)
-    return r.json()
+    data = {
+        "action": "save_profile",   # ✅ เพิ่มบอก action
+        "secret": "my_secret_code", # ✅ กันคนนอกส่งข้อมูล
+    }
+    data.update(profile_data)  # รวมข้อมูลโปรไฟล์เข้ามา
+    r = requests.post(SHEET_API_URL, json=data)
+    try:
+        return r.json()
+    except:
+        return {"ok": False, "error": r.text}
+
 
 
 
