@@ -30,7 +30,7 @@ app = Flask(__name__)
 BANGKOK_TZ = pytz.timezone("Asia/Bangkok")
 
 # ===== Google Sheets API (Apps Script endpoint) =====
-SHEET_API_URL = os.getenv("SHEET_API_URL", "https://script.google.com/macros/s/AKfycbwHNNOqy2QPycsroR_soj1JQeiENC-AtxMDLtJiAiLoj9g6T22qOBtk9j9nCq34Lprjxw/exec")
+SHEET_API_URL = os.getenv("SHEET_API_URL", "https://script.google.com/macros/s/AKfycbyMTQJU755zDLKkZjxptp43h3heAREqH6ftXfpjZD9P9HP0DppglDyEZ5AfAh0R5mHeCg/exec")
 ADMIN_PASS = "8264"
 
 # ===== Helper =====
