@@ -281,7 +281,7 @@ def handle_image(event):
             text=f"📸 ได้รับแล้ว {len(state['images'])}/3 กรุณาส่งต่อ"))
         return
 
-    # ครบ 3 → บันทึก DB
+    # ครบ 3 → บันทึก DB (SQLite)
     query_db("""INSERT INTO duty_logs
         (userId, วันที่, ห้อง, เวรวัน, เลขที่ผู้ส่ง, url1, url2, url3, เวลา, สถานะ)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -297,8 +297,10 @@ def handle_image(event):
         )
     )
 
-    # แจ้งอาจารย์
-    teachers = query_db("SELECT * FROM profiles WHERE ห้อง=? AND บทบาท='อาจารย์'", (state["data"]["ห้อง"],))
+    # ✅ ดึงอาจารย์จาก Google Sheets แทน SQLite
+    profiles = get_profiles()
+    teachers = [p for p in profiles if p["ห้อง"] == state["data"]["ห้อง"] and p["บทบาท"] == "อาจารย์"]
+
     for t in teachers:
         line_bot_api.push_message(
             t["userId"],
@@ -307,6 +309,7 @@ def handle_image(event):
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
     del user_states[user_id]
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
