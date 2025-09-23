@@ -6,7 +6,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMess
 from datetime import datetime, time
 import pytz
 import sqlite3
-
+from apscheduler.schedulers.background import BackgroundScheduler
 
 DB_NAME = "data.db"
 
@@ -311,7 +311,68 @@ def handle_image(event):
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ ส่งหลักฐานครบแล้ว"))
     del user_states[user_id]
 
+# ✅ ฟังก์ชันเช็คว่าวันนี้เป็นวันหยุดหรือไม่
+def is_today_holiday():
+    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    try:
+        r = requests.get(f"{SHEET_API_URL}?sheet=Holidays")
+        if r.status_code == 200:
+            holidays = r.json().get("data", [])
+            if any(h["วันที่"] == today for h in holidays):
+                return True
+    except:
+        pass
+    weekday = datetime.now(BANGKOK_TZ).strftime("%A")
+    return weekday in ["Saturday", "Sunday"]
 
+# ✅ แจ้งเตือนนักเรียน
+def remind_students():
+    if is_today_holiday():
+        print("วันนี้เป็นวันหยุด ❌ ไม่ส่งแจ้งเตือน")
+        return
+    today_thai = {
+        "Monday": "จันทร์", "Tuesday": "อังคาร", "Wednesday": "พุธ",
+        "Thursday": "พฤหัสบดี", "Friday": "ศุกร์"
+    }.get(datetime.now(BANGKOK_TZ).strftime("%A"))
+
+    profiles = get_profiles()
+    students = [p for p in profiles if p["เวรวัน"] == today_thai and p["บทบาท"] in ["นักเรียน", "แอดมิน"]]
+
+    for s in students:
+        line_bot_api.push_message(
+            s["userId"],
+            TextSendMessage(text=f"📢 แจ้งเตือน! วันนี้ ({today_thai}) เป็นวันเวรของคุณ\nกรุณาส่งหลักฐานการทำเวรภายในเวลา 17:00 น.")
+        )
+
+# ✅ แจ้งเตือนอาจารย์ถ้าไม่มีการส่ง
+def remind_teachers_if_no_evidence():
+    if is_today_holiday():
+        return
+    today = datetime.now(BANGKOK_TZ).strftime("%Y-%m-%d")
+    today_thai = {
+        "Monday": "จันทร์", "Tuesday": "อังคาร", "Wednesday": "พุธ",
+        "Thursday": "พฤหัสบดี", "Friday": "ศุกร์"
+    }.get(datetime.now(BANGKOK_TZ).strftime("%A"))
+
+    profiles = get_profiles()
+    students = [p for p in profiles if p["เวรวัน"] == today_thai and p["บทบาท"] in ["นักเรียน", "แอดมิน"]]
+
+    for s in students:
+        row = query_db("SELECT * FROM duty_logs WHERE ห้อง=? AND วันที่=?", (s["ห้อง"], today), one=True)
+        if not row:
+            teachers = [p for p in profiles if p["ห้อง"] == s["ห้อง"] and p["บทบาท"] == "อาจารย์"]
+            for t in teachers:
+                line_bot_api.push_message(
+                    t["userId"],
+                    TextSendMessage(text=f"⚠️ แจ้งเตือน: ห้อง {s['ห้อง']} ยังไม่ได้ส่งหลักฐานการทำเวรวันนี้")
+                )
+
+# ✅ สร้าง scheduler
+scheduler = BackgroundScheduler(timezone=BANGKOK_TZ)
+scheduler.add_job(remind_students, "cron", hour=15, minute=20)
+scheduler.add_job(remind_students, "cron", hour=15, minute=30)
+scheduler.add_job(remind_teachers_if_no_evidence, "cron", hour=17, minute=0)
+scheduler.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
