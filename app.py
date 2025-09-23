@@ -7,6 +7,7 @@ from datetime import datetime, time
 import pytz
 import sqlite3
 
+
 DB_NAME = "data.db"
 
 def query_db(query, args=(), one=False):
